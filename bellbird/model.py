@@ -1,8 +1,26 @@
+import os
 from bellbird.equation import *
 from bellbird.operators import *
 
+class BoundaryCondition:
+	bcDict = {"DIRICHLET_BOUNDARY_CONDITION":"Dirichlet", "NEUMANN_BOUNDARY_CONDITION":"Neumann"}
+	def __init__(self, variableName, boundaryConditionType, boundaryName, value):
+		self.variableName 			= variableName
+		self.boundaryConditionType 	= boundaryConditionType
+		self.boundaryName 			= boundaryName
+		self.value 					= value
+	@property
+	def condition(self):
+		return self.bcDict[self.boundaryConditionType]
+
+class InitialCondition:
+	def __init__(self, variableName, boundaryConditionType, value):
+		self.variableName 			= variableName
+		self.boundaryConditionType 	= boundaryConditionType
+		self.value 					= value
+
 class Model:
-	def __init__(self, name, equationStr, variables, properties, boundaryConditions=None, meshPath=""):
+	def __init__(self, name, equationStr, variables, properties, boundaryConditions, meshPath=""):
 		self.name 				= name
 		self.equationStr 		= equationStr
 		self.variables 			= variables
@@ -10,6 +28,7 @@ class Model:
 		self.boundaryConditions = boundaryConditions
 		self.meshPath 			= meshPath
 
+		self.compiled = False
 		self.equation = Equation(equationStr)
 
 		self.applyEbFVM()
@@ -27,6 +46,7 @@ class Model:
 
 	def compile(self):
 		name = self.name.lower()[0] + "".join(self.name.split())[1:]
+		self.fileName = "_".join(self.name.lower().split()) + ".py"
 
 		self.text = ""
 		def write(ln="", t=0, nl=1):
@@ -196,10 +216,58 @@ class Model:
 			write(t=t+1, ln="converged = ( difference <= tolerance ) or ( currentTime >= problemData.finalTime ) or ( iteration >= problemData.maxNumberOfIterations )", nl=2)
 			write(t=t+1, ln="if iteration >= problemData.maxNumberOfIterations:")
 			write(t=t+2, ln="break", nl=2)
-			write(t=t+0, ln="saver.finalize()")
+			write(t=t+0, ln="saver.finalize()", nl=2)
 		writeSolverLoop(1)
 
-		self.text += "\n\n\nif __name__ == '__main__':\n\tproblemData = PyEFVLib.ProblemData(\n\t\tmeshFilePath = '{MESHES}/msh/2D/Square.msh',\n\t\toutputFilePath = '{RESULTS}/../../BellBird2/results',\n\t\tnumericalSettings = PyEFVLib.NumericalSettings( timeStep = 0.1, tolerance = 1e-4, maxNumberOfIterations = 300 ),\n\t\tpropertyData = PyEFVLib.PropertyData({\n\t\t    'Body':\n\t\t    {\n\t\t    \t'k': 1,\n\t\t    \t'rho': 1,\n\t\t    \t'cp': 1,\n\t\t    \t'q': 0,\n\t\t    }\n\t\t}),\n\t\tboundaryConditions = PyEFVLib.BoundaryConditions({\n\t\t\t'temperature': {\n\t\t\t\t'InitialValue': 0.0,\n\t\t\t\t'West':\t { 'condition' : PyEFVLib.Dirichlet, 'type' : PyEFVLib.Constant,'value' : 20.0 },\n\t\t\t\t'East':\t { 'condition' : PyEFVLib.Dirichlet, 'type' : PyEFVLib.Constant,'value' : 50.0 },\n\t\t\t\t'South': { 'condition' : PyEFVLib.Neumann,   'type' : PyEFVLib.Constant,'value' : 0.0 },\n\t\t\t\t'North': { 'condition' : PyEFVLib.Neumann,   'type' : PyEFVLib.Constant,'value' : 0.0 },\n\t\t\t}\n\t\t}),\n\t)\n\theatTransfer( problemData )\n"
+		def writeMainFunction(t):
+			def getRegionNames():
+				try:
+					import sys,os
+					sys.path.append(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, 'PyEFVLib'))
+					import PyEFVLib
+					return PyEFVLib.read(self.meshPath).gridData.regionsNames
+				except:
+					return ["Body"]
+			regionNames = getRegionNames()
+			write(t=t+0, ln="def main():")
+			write(t=t+1, ln="problemData = PyEFVLib.ProblemData(")
+			write(t=t+1, ln=f"	meshFilePath = '{self.meshPath}',")
+			write(t=t+2, ln="outputFilePath = 'results',")
+			write(t=t+2, ln="numericalSettings = PyEFVLib.NumericalSettings( timeStep = 0.1, tolerance = 1e-4, maxNumberOfIterations = 300 ),")
+			write(t=t+2, ln="propertyData = PyEFVLib.PropertyData({")
+			for regionName in regionNames:
+				write(t=t+3, ln=f"'{regionName}':")
+				write(t=t+3, ln="{")
+				for propertyName, propertyValue in self.properties.items():
+					write(t=t+4, ln=f"'{propertyName}': {propertyValue},")
+				write(t=t+3, ln="},")
+			write(t=t+2, ln="}),")
+			write(t=t+2, ln="boundaryConditions = PyEFVLib.BoundaryConditions({")
+			for variableName in self.variables:
+				write(t=t+3, ln=f"'{variableName}': {{")
+				for bc in self.boundaryConditions:
+					if bc.__class__ == InitialCondition and bc.variableName == variableName:
+						write(t=t+4, ln=f"'InitialValue': {bc.value},")
+					if bc.__class__ == BoundaryCondition and bc.variableName == variableName:
+						write(t=t+4, ln=f"'{bc.boundaryName}': {{ 'condition' : PyEFVLib.{bc.condition}, 'type' : PyEFVLib.Constant, 'value' : {bc.value} }},")
+			write(t=t+1, ln="\t\t}\n\t\t}),\n\t)\n")
+			write(t=t+1, ln=f"{name}( problemData )", nl=2)
+			write(t=t+0, ln="if __name__ == '__main__':")
+			write(t=t+1, ln="main()")
+		writeMainFunction(0)
 
-		with open("results.py", "w") as f:
+		with open(self.fileName, "w") as f:
 			f.write(self.text)
+
+		self.compiled = True
+
+	def run(self):
+		if not self.compiled:
+			self.compile()
+		try:
+			os.rename(self.fileName, "results.py")
+			from results import main
+			main()
+			os.rename("results.py", self.fileName)
+		except:
+			Exception("Error while compiling file!")

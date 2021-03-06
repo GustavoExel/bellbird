@@ -9,32 +9,32 @@ variables = ["temperature"]
 properties = {
 	"k" : 1.0,
 	"q" : 0.0,
-	"rho" : 1000.0,
-	"cp" : 120.0,
+	"rho" : 1.0,
+	"cp" : 1.0,
 }
 
-# boundaryConditions = [
-# 	bellbird.BoundaryCondition("T", bellbird.Dirichlet, "Body", 0.0),
-# 	bellbird.BoundaryCondition("T", bellbird.Dirichlet, "West", 0.0),
-# 	bellbird.BoundaryCondition("T", bellbird.Dirichlet, "East", 100.0),
-# 	bellbird.BoundaryCondition("T", bellbird.Neumann, "South", 0.0),
-# 	bellbird.BoundaryCondition("T", bellbird.Neumann, "North", 0.0),
-# ]
+boundaryConditions = [
+	bellbird.InitialCondition("temperature",  bellbird.Dirichlet, 0.0),
+	bellbird.BoundaryCondition("temperature", bellbird.Dirichlet, "West", 0.0),
+	bellbird.BoundaryCondition("temperature", bellbird.Dirichlet, "East", 100.0),
+	bellbird.BoundaryCondition("temperature", bellbird.Neumann, "South", 0.0),
+	bellbird.BoundaryCondition("temperature", bellbird.Neumann, "North", 0.0),
+]
 
-meshPath = "./mesh.msh"
+meshPath = "../PyEFVLib/meshes/msh/2D/Square.msh"
 
 model = bellbird.Model(
 	name = name,
 	equationStr = equationStr,
 	variables   = variables,
 	properties = properties,
-	# boundaryConditions = boundaryConditions,
+	boundaryConditions = boundaryConditions,
 	meshPath = meshPath,
 )
 
 # print(model.discretizedEquation)
-model.compile()
-
+# model.compile()
+model.run()
 
 """
 Plano:
