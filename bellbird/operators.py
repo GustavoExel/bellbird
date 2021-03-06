@@ -13,6 +13,11 @@ class Function(Operator):
 	def __repr__(self):
 		return f"{self.func}({self.args[0]})"
 
+	@property
+	def arg(self):
+		return self.args[0]
+	
+
 class BinaryOperator(Operator):
 	def __repr__(self):
 		return f" {self.symbol} ".join(map(str, self.args))

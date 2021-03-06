@@ -19,12 +19,16 @@ class Vector(Variable):
 class Constant(Variable):
 	symbol = "const"
 
+class Field(Variable):
+	symbol = "field"
+
 
 varTypes = {
-	"var":		Variable,
+	"var"	:	Variable,
 	"scalar": 	Scalar,
-	"vector":	Vector,
-	"const":	Constant,
+	"vec"	:	Vector,
+	"const"	:	Constant,
+	"field"	:	Field,
 }
 
 timeDifferential 		= Scalar("Δt")
