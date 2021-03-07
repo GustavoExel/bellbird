@@ -33,6 +33,11 @@ class Gradient(Function):
 	func = "grad"
 	linear = True
 
+class SymmetricGradient(Function):
+	# (1/2) * ( grad(u) + grad(u)^T )
+	func = "grad_s"
+	linear = True
+
 class TimeDerivative(Function):
 	func = "d/dt"
 	linear = True
@@ -99,6 +104,7 @@ class CrossProduct(BinaryOperator):
 functions = {
 	"div"	 : Divergence,
 	"grad"	 : Gradient,
+	"grad_s" : SymmetricGradient,
 	"d/dt"	 : TimeDerivative,
 	"intT"	 : TimeIntegral,
 	"iiint"	 : VolumetricIntegral,

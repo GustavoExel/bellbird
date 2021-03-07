@@ -11,14 +11,14 @@ class Equation:
 		return str(self.term)
 
 	@property
-	def rhs(self):
+	def lhs(self):
 		if self.term.args[0].__class__ == Sum:
 			return self.term.args[0].args
 		else:
 			return [ self.term.args[0] ]
 
 	@property
-	def lhs(self):
+	def rhs(self):
 		if self.term.args[1].__class__ == Sum:
 			return self.term.args[1].args
 		else:
@@ -56,6 +56,9 @@ class Equation:
 	def updateVariables(self, variableNames):
 		updateVariables(self.term, variableNames)
 
+	def updateDefinitions(self, definedVars):
+		updateDefinitions(self.term, definedVars)
+
 	def integrateInTime(self):
 		integrateInTime(self.term)
 		self.rewrite()
@@ -68,17 +71,23 @@ class Equation:
 		applyDivergenceTheorem(self.term)
 
 	def isolateVariables(self, variables):
-		rhsVars = [ term for term in self.rhs if 	 containsVariables(term, variables) ]
-		rhsInds = [ term for term in self.rhs if not containsVariables(term, variables) ]
 		lhsVars = [ term for term in self.lhs if 	 containsVariables(term, variables) ]
 		lhsInds = [ term for term in self.lhs if not containsVariables(term, variables) ]
+		rhsVars = [ term for term in self.rhs if 	 containsVariables(term, variables) ]
+		rhsInds = [ term for term in self.rhs if not containsVariables(term, variables) ]
 
 		self.term = Equals( 
-			Sum( *rhsVars, Multiplication(minusOne, *lhsVars) ) if lhsVars else Sum(*rhsVars),
-			Sum( *lhsInds, Multiplication(minusOne, *rhsInds) ) if rhsInds else Sum(*lhsInds)
+			Sum( *lhsVars, Multiplication(minusOne, *rhsVars) ) if rhsVars else Sum(*lhsVars),
+			Sum( *rhsInds, Multiplication(minusOne, *lhsInds) ) if lhsInds else Sum(*rhsInds)
 		)
 
 		self.rewrite()
+
+	def getDimension(self):
+		return getDimension(self.term)
+
+	def isTransient(self):
+		return isTransient(self.term)
 
 def hasSubclass(obj, subclass):
 	return subclass in obj.__class__.__mro__
@@ -90,6 +99,7 @@ def parseEquationStr(eqString):
 	while "  " in eqString:
 		eqString = eqString.replace("  ", " ")
 	eqString = eqString.replace("d / dt", "d/dt")
+	eqString = eqString.replace("grad _s", "grad_s")
 	eqComponentsStr = eqString.split()
 
 	# Separate parenthesis
@@ -167,10 +177,22 @@ def updateVariables(term, variableNames):
 	for idx, arg in enumerate(term.args):
 		if hasSubclass(arg, Variable):
 			if arg.name in variableNames:
-				term.args[idx] = Field(arg.name)
+				term.args[idx] = ScalarField(arg.name)
+			elif arg.name in [varName.replace("_x","") for varName in variableNames if "_x" in varName]:
+				term.args[idx] = VectorField(arg.name)
 
 		if hasSubclass(arg, Operator):
 			updateVariables(arg, variableNames)	
+
+def updateDefinitions(term, definedVars):
+	definedNames = [ var.name for var in definedVars ]
+	for idx, arg in enumerate(term.args):
+		if hasSubclass(arg, Variable):
+			if arg.name in definedNames:
+				term.args[idx] = definedVars[ definedNames.index(arg.name) ]
+
+		if hasSubclass(arg, Operator):
+			updateDefinitions(arg, definedVars)	
 
 def applyLinearProperty(term, flag=1):
 	for idx, arg in enumerate(term.args):
@@ -188,14 +210,14 @@ def applyLinearProperty(term, flag=1):
 				elif len(constants) == 1:
 					term.args[idx] = constants[0]
 
-			if hasSubclass(arg.arg, Constant) and arg.arg == "0":
-				term.args[idx] = zero
+			if hasSubclass(arg.arg, Variable) and arg.arg in [zero, zeroVec]:
+				term.args[idx] = arg.arg
 
 			for operator in linearOperators:
 				if hasSubclass(arg.arg, operator):
 					args = arg.arg.args
 					term.args[idx] = operator( *[function(arg) for arg in args] )
-		elif hasSubclass(arg, Operator):
+		if hasSubclass(arg, Operator):
 			applyLinearProperty(arg, flag+1)
 	if flag > 0:
 		applyLinearProperty(term, flag-1)
@@ -257,7 +279,7 @@ def applyDistributiveProperty(term, flag=1):
 	if flag > 0:
 		applyDistributiveProperty(term, flag-1)
 
-def clusterOperations(term, flag=4):
+def clusterOperations(term, flag=5):
 	for idx, arg in enumerate(term.args):
 		# Multiplication(A, Multiplication(B, C)) -> Multiplication(A, B, C)
 		if hasSubclass(arg, Multiplication):
@@ -293,11 +315,43 @@ def clusterOperations(term, flag=4):
 		if hasSubclass(arg, Sum):
 			if zero in arg.args:
 				arg.args.remove(zero)
+			elif zeroVec in arg.args:
+				arg.args.remove(zeroVec)
+
+		# Multiplication(1, A, B, ...) -> Multiplication(A, B, ...)
+		if hasSubclass(arg, Multiplication):
+			if one in arg.args:
+				arg.args.remove(one)
+
+		# Multiplication(0, A, B, ...) -> 0
+		if hasSubclass(arg, Multiplication):
+			if zero in arg.args:
+				term.args[idx] = zero
+
+		# Sum() -> 0
+		if hasSubclass(arg, Sum):
+			if len(arg.args) == 0:
+				term.args[idx] = zero
+
+		# Multiplication() -> 1
+		if hasSubclass(arg, Multiplication):
+			if len(arg.args) == 0:
+				term.args[idx] = one
 
 		# binaryOperator(A) -> A
 		if hasSubclass(arg, BinaryOperator):
 			if len(arg.args) == 1:
 				term.args[idx] = arg.args[0]
+
+		# d/dX( const(A) ) -> 0
+		if arg.__class__ in [TimeDerivative, Gradient]:
+			if hasSubclass(arg.arg, Constant):
+				term.args[idx] = zero
+
+		# vec(0) -> zeroVec
+		if hasSubclass(arg, Vector):
+			if arg.name == "0":
+				term.args[idx] = zeroVec
 
 		if hasSubclass(arg, Operator):
 			clusterOperations(arg, flag+1)
@@ -307,14 +361,13 @@ def clusterOperations(term, flag=4):
 
 def containsVariables(term, variables):
 	if hasSubclass(term, Variable):
-		return term.name in variables
-	
+		return term.name in variables + [varName.replace("_x", "") for varName in variables if "_x" in varName]
+
 	elif hasSubclass(term, Operator):
 		for arg in term.args:
 			if containsVariables(arg, variables):
 				return True
 		return False
-
 
 def getTermFields(term):
 	if hasSubclass(term, Field):
@@ -326,3 +379,65 @@ def getTermFields(term):
 			fields += getTermFields(arg)
 
 	return fields
+
+def getDimension(term):
+	if hasSubclass(term, Constant):
+		return 0
+	elif hasSubclass(term, Vector):
+		return 1
+	elif hasSubclass(term, Matrix):
+		return 2
+	elif hasSubclass(term, Tensor):
+		return 3
+	elif hasSubclass(term, Function):
+		if term.__class__ in [TimeDerivative, TimeIntegral, VolumetricIntegral, SurfaceIntegral, VolumetricSummatory, SurfaceSummatory]:
+			return getDimension(term.arg)
+		elif term.__class__ == Divergence:
+			return getDimension(term.arg) - 1
+		elif term.__class__ in [Gradient, SymmetricGradient]:
+			return getDimension(term.arg) + 1
+
+	elif hasSubclass(term, BinaryOperator):
+		if term.__class__ in [Sum, Subtraction, Equals]:
+			argsDimensions = [ getDimension(arg) for arg in term.args ]
+			dim = argsDimensions[0]
+			if [argDim for argDim in argsDimensions if argDim != dim ]:
+				raise Exception(f"Invalid operation {term}")
+			return dim
+
+		elif term.__class__ == Multiplication:
+			argsDimensions = [ getDimension(arg) for arg in term.args ]
+			dim = argsDimensions[0]
+
+			for argDim in argsDimensions[1:]:
+				if dim == 0:
+					dim = argDim
+				elif dim == 1 and argDim == 1:
+					dim = 0
+				elif dim == 2 and argDim == 1:
+					dim = 1
+				# else:
+				# 	dim = dim
+			return dim
+
+		elif term.__class__ == DotProduct:
+			return sum([ getDimension(arg) for arg in term.args ]) - 2
+
+		elif term.__class__ == CrossProduct:
+			# May need revision
+			return getDimension(term.args[0])
+
+	# print("-----------------")
+	# print(term)
+	# exit()
+
+def isTransient(term):
+	if hasSubclass(term, TimeDerivative):
+		return True
+
+	elif hasSubclass(term, Operator):
+		for arg in term.args:
+			if isTransient(arg):
+				return True
+
+	return False

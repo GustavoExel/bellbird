@@ -20,33 +20,46 @@ class InitialCondition:
 		self.value 					= value
 
 class Model:
-	def __init__(self, name, equationStr, variables, properties, boundaryConditions, meshPath=""):
+	def __init__(self, name, equationStr, variables, properties, boundaryConditions, definitions=[], meshPath=""):
 		self.name 				= name
 		self.equationStr 		= equationStr
 		self.variables 			= variables
 		self.properties 		= properties
 		self.boundaryConditions = boundaryConditions
+		self.definitions		= definitions
 		self.meshPath 			= meshPath
 
 		self.compiled = False
 		self.equation = Equation(equationStr)
 
+		self.parseDefinitions()
 		self.applyEbFVM()
+
+	def parseDefinitions(self):
+		definedNames = [ definition.split(" = ")[0] for definition in self.definitions ]
+		self.definedVars = [ Constant(termStr) if not "[" in definition.split(" = ")[1] else (Vector(termStr) if not "[[" in definition.split(" = ")[1].replace(" ", "") else Matrix(termStr)) for termStr, definition in zip(definedNames, self.definitions)]
+
+		self.equation.updatePropertyVars(self.properties)
+		self.equation.updateDefinitions(self.definedVars)
 
 	def applyEbFVM(self):
 		self.discretizedEquation = Equation(self.equationStr)
 
 		self.discretizedEquation.updatePropertyVars(self.properties)
 		self.discretizedEquation.updateVariables(self.variables)
+		self.discretizedEquation.updateDefinitions(self.definedVars)
 		self.discretizedEquation.integrateInSpace()				# a = b -> iiint(a) = iiint(b)
 		self.discretizedEquation.applyDivergenceTheorem()		# iiint(div(f)) = iint(f)
 		self.discretizedEquation.integrateInTime()				# d/dt(f) = (f-f_old)*(1/Δt)
 		self.discretizedEquation.isolateVariables(self.variables) # x+a=y+c -> x-y=-a+c
 		self.discretizedEquation.unapplyLinearProperty()
 
-	def compile(self):
+	def compile(self, fileName="results.py"):
 		name = self.name.lower()[0] + "".join(self.name.split())[1:]
-		self.fileName = "_".join(self.name.lower().split()) + ".py"
+		self.fileName = fileName
+		# self.fileName = "_".join(self.name.lower().split()) + ".py"
+
+		self.transientEquation = self.equation.isTransient()
 
 		self.text = ""
 		def write(ln="", t=0, nl=1):
@@ -62,7 +75,8 @@ class Model:
 		def writeProblemData(t):
 			write(t=t,   ln=f"def {name}(problemData):")
 			write(t=t+1, ln="propertyData 	 = problemData.propertyData")
-			write(t=t+1, ln="timeStep 		 = problemData.timeStep")
+			if self.transientEquation:
+				write(t=t+1, ln="timeStep 		 = problemData.timeStep")
 			write(t=t+1, ln="grid 			 = problemData.grid")
 			write(t=t+1, ln="numberOfVertices = grid.numberOfVertices")
 			write(t=t+1, ln="dimension 		 = grid.dimension", nl=2)
@@ -91,7 +105,7 @@ class Model:
 			write(t=t+1, ln="matrix = np.zeros((numberOfVertices, numberOfVertices))", nl=2)
 
 			def writeMatrixVolumeIntegrals(t):
-				for term in self.discretizedEquation.rhs:
+				for term in self.discretizedEquation.lhs:
 					if term.__class__ == VolumetricIntegral and term.arg.__class__ == Multiplication:
 						hasVar = False
 						for varName in self.variables:
@@ -112,7 +126,7 @@ class Model:
 			writeMatrixVolumeIntegrals(t+1)
 
 			def writeMatrixSurfaceGradIntegrals(t):
-				for term in self.discretizedEquation.rhs:
+				for term in self.discretizedEquation.lhs:
 					if term.__class__ == SurfaceIntegral and term.arg.__class__ == Multiplication:
 						gradTerms = [arg for arg in term.arg.args if hasSubclass(arg, Gradient)]
 						if gradTerms:
@@ -143,7 +157,7 @@ class Model:
 
 			def inverseMatrix(t):
 				write(t=t, ln="# Invert Matrix")
-				write(t=t, ln="inverseMatrix = np.linalg.inv(matrix)", nl=2)
+				write(t=t, ln="inverseMatrix = np.linalg.inv(matrix)")
 				write(t=t, ln="return inverseMatrix", nl=2)
 			inverseMatrix(t+1)
 		assembleMatrix(1)
@@ -153,7 +167,7 @@ class Model:
 			write(t=t+1, ln="independent = np.zeros(numberOfVertices)", nl=2)
 
 			def writeIndependentVolumeIntegral(t):
-				for term in self.discretizedEquation.lhs:
+				for term in self.discretizedEquation.rhs:
 					if term.__class__ == VolumetricIntegral and (term.arg.__class__ == Multiplication or hasSubclass(term.arg, Variable)):
 
 						# AINDA PRECISA TRATAR AS VARIÁVEIS DE CAMPO
@@ -193,10 +207,10 @@ class Model:
 					write(t=t+3, ln="independent[outerFace.vertex.handle] += bCondition.getValue(outerFace.handle) * np.linalg.norm(outerFace.area.getCoordinates())", nl=2)
 			writeNeumannBoundaryConditions(t+1)
 
-			write(t=t+1, ln="return independent")
+			write(t=t+1, ln="return independent", nl=2)
 		assembleIndependent(1)
 
-		def writeSolverLoop(t):
+		def writeTransientSolverLoop(t):
 			# Written very specifically for problems with only one variable
 			write(t=t+0, ln="tolerance = problemData.tolerance")
 			write(t=t+0, ln="difference = 2*tolerance")
@@ -206,7 +220,14 @@ class Model:
 			write(t=t+0, ln="inverseMatrix = assembleMatrix()", nl=2)
 			write(t=t+0, ln="while not converged:")
 			write(t=t+1, ln="independent = assembleIndependent()")
-			write(t=t+1, ln=f"{self.variables[0]}Field = np.matmul(inverseMatrix, independent)", nl=2)
+			if len(self.variables) == 1:
+				write(t=t+1, ln=f"{self.variables[0]}Field = np.matmul(inverseMatrix, independent)", nl=2)
+			else:
+				write(t=t+1, ln="")
+				write(t=t+1, ln=f"results = np.matmul(inverseMatrix, independent)")
+				for i, variable in enumerate(self.variables):
+					write(t=t+1, ln=f"{variable}Field = results[{i}*numberOfVertices:{i+1}*numberOfVertices]")
+				write(t=t+1, ln="")
 			write(t=t+1, ln=f"difference = max( abs({self.variables[0]}Field - old{self.variables[0].capitalize()}Field) )")
 			write(t=t+1, ln=f"old{self.variables[0].capitalize()}Field = {self.variables[0]}Field.copy()")
 			write(t=t+1, ln="currentTime += timeStep")
@@ -217,7 +238,24 @@ class Model:
 			write(t=t+1, ln="if iteration >= problemData.maxNumberOfIterations:")
 			write(t=t+2, ln="break", nl=2)
 			write(t=t+0, ln="saver.finalize()", nl=2)
-		writeSolverLoop(1)
+		def writePermanentSolverLoop(t):
+			# Written very specifically for problems with only one variable
+			write(t=t, ln="inverseMatrix = assembleMatrix()")
+			write(t=t, ln="independent = assembleIndependent()", nl=2)
+			if len(self.variables) == 1:
+				write(t=t, ln=f"{self.variables[0]}Field = np.matmul(inverseMatrix, independent)")
+			else:
+				write(t=t, ln=f"results = np.matmul(inverseMatrix, independent)")
+				for i, variable in enumerate(self.variables):
+					write(t=t, ln=f"{variable}Field = results[{i}*numberOfVertices:{i+1}*numberOfVertices]")
+			write(t=t, ln="")
+			for variable in self.variables:
+				write(t=t, ln=f"saver.save('{variable}', {variable}Field, 0.0)")
+			write(t=t, ln="saver.finalize()", nl=2)
+		if self.transientEquation:
+			writeTransientSolverLoop(1)
+		else:
+			writePermanentSolverLoop(1)
 
 		def writeMainFunction(t):
 			def getRegionNames():
@@ -250,7 +288,8 @@ class Model:
 						write(t=t+4, ln=f"'InitialValue': {bc.value},")
 					if bc.__class__ == BoundaryCondition and bc.variableName == variableName:
 						write(t=t+4, ln=f"'{bc.boundaryName}': {{ 'condition' : PyEFVLib.{bc.condition}, 'type' : PyEFVLib.Constant, 'value' : {bc.value} }},")
-			write(t=t+1, ln="\t\t}\n\t\t}),\n\t)\n")
+				write(t=t+1, ln="\t\t}")
+			write(t=t+2, ln="}),\n\t)\n")
 			write(t=t+1, ln=f"{name}( problemData )", nl=2)
 			write(t=t+0, ln="if __name__ == '__main__':")
 			write(t=t+1, ln="main()")
@@ -262,12 +301,12 @@ class Model:
 		self.compiled = True
 
 	def run(self):
-		if not self.compiled:
+		if not (self.compiled and self.fileName=="results.py"):
 			self.compile()
 		try:
-			os.rename(self.fileName, "results.py")
+			# os.rename(self.fileName, "results.py")
 			from results import main
 			main()
-			os.rename("results.py", self.fileName)
+			# os.rename("results.py", self.fileName)
 		except:
-			Exception("Error while compiling file!")
+			raise Exception("Error while compiling file!")
