@@ -3,7 +3,7 @@ import bellbird
 # Heat Transfer
 model = bellbird.Model(
 	name = "Heat Transfer",
-	equationStr = "rho * cp * d/dt(temperature) = const(k) * div( grad(temperature) ) + q",
+	equationsStr = ["rho * cp * d/dt(temperature) = const(k) * div( grad(temperature) ) + q"],
 	# equationStr = "const(k) * div( grad(temperature) ) + q = rho * cp * d/dt(temperature)",
 	variables   = ["temperature"],
 	properties = {
@@ -13,15 +13,16 @@ model = bellbird.Model(
 		"cp" : 1.0,
 	},
 	boundaryConditions = [
-		bellbird.InitialCondition("temperature",  bellbird.Dirichlet, 0.0),
+		bellbird.InitialCondition("temperature", 0.0),
 		bellbird.BoundaryCondition("temperature", bellbird.Neumann, "West", 100.0),
 		bellbird.BoundaryCondition("temperature", bellbird.Dirichlet, "East", 100.0),
 		bellbird.BoundaryCondition("temperature", bellbird.Neumann, "South", 0.0),
 		bellbird.BoundaryCondition("temperature", bellbird.Neumann, "North", 0.0),
 	],
 	meshPath = "../PyEFVLib/meshes/msh/2D/Square.msh",
+	meshDimension = 2,
 )
 
-print(model.discretizedEquation)
+# print(model.discretizedEquations[0])
 model.compile()
 # model.run()

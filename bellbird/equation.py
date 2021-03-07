@@ -4,7 +4,6 @@ from bellbird.variables import *
 class Equation:
 	def __init__(self, equationStr):
 		self.equationStr = equationStr
-
 		self.term = parseEquationStr(self.equationStr)
 
 	def __repr__(self):
@@ -83,8 +82,14 @@ class Equation:
 
 		self.rewrite()
 
-	def getDimension(self):
-		return getDimension(self.term)
+	_order = None
+	@property
+	def order(self):
+		if not self._order:
+			self._order = self.getOrder()
+		return self._order
+	def getOrder(self):
+		return getOrder(self.term)
 
 	def isTransient(self):
 		return isTransient(self.term)
@@ -380,7 +385,7 @@ def getTermFields(term):
 
 	return fields
 
-def getDimension(term):
+def getOrder(term):
 	if hasSubclass(term, Scalar):
 		return 0
 	elif hasSubclass(term, Vector):
@@ -391,41 +396,41 @@ def getDimension(term):
 		return 3
 	elif hasSubclass(term, Function):
 		if term.__class__ in [TimeDerivative, TimeIntegral, VolumetricIntegral, SurfaceIntegral, VolumetricSummatory, SurfaceSummatory]:
-			return getDimension(term.arg)
+			return getOrder(term.arg)
 		elif term.__class__ == Divergence:
-			return getDimension(term.arg) - 1
+			return getOrder(term.arg) - 1
 		elif term.__class__ in [Gradient, SymmetricGradient]:
-			return getDimension(term.arg) + 1
+			return getOrder(term.arg) + 1
 
 	elif hasSubclass(term, BinaryOperator):
 		if term.__class__ in [Sum, Subtraction, Equals]:
-			argsDimensions = [ getDimension(arg) for arg in term.args ]
-			dim = argsDimensions[0]
-			if [argDim for argDim in argsDimensions if argDim != dim ]:
+			argsOrders = [ getOrder(arg) for arg in term.args ]
+			order = argsOrders[0]
+			if [argOrder for argOrder in argsOrders if argOrder != order ]:
 				raise Exception(f"Invalid operation {term}")
-			return dim
+			return order
 
 		elif term.__class__ == Multiplication:
-			argsDimensions = [ getDimension(arg) for arg in term.args ]
-			dim = argsDimensions[0]
+			argsOrders = [ getOrder(arg) for arg in term.args ]
+			order = argsOrders[0]
 
-			for argDim in argsDimensions[1:]:
-				if dim == 0:
-					dim = argDim
-				elif dim == 1 and argDim == 1:
-					dim = 0
-				elif dim == 2 and argDim == 1:
-					dim = 1
+			for argOrder in argsOrders[1:]:
+				if order == 0:
+					order = argOrder
+				elif order == 1 and argOrder == 1:
+					order = 0
+				elif order == 2 and argOrder == 1:
+					order = 1
 				# else:
-				# 	dim = dim
-			return dim
+				# 	order = order
+			return order
 
 		elif term.__class__ == DotProduct:
-			return sum([ getDimension(arg) for arg in term.args ]) - 2
+			return sum([ getOrder(arg) for arg in term.args ]) - 2
 
 		elif term.__class__ == CrossProduct:
 			# May need revision
-			return getDimension(term.args[0])
+			return getOrder(term.args[0])
 
 	# print("-----------------")
 	# print(term)

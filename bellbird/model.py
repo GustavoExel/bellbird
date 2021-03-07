@@ -14,54 +14,68 @@ class BoundaryCondition:
 		return self.bcDict[self.boundaryConditionType]
 
 class InitialCondition:
-	def __init__(self, variableName, boundaryConditionType, value):
+	def __init__(self, variableName, value):
 		self.variableName 			= variableName
-		self.boundaryConditionType 	= boundaryConditionType
 		self.value 					= value
 
 class Model:
-	def __init__(self, name, equationStr, variables, properties, boundaryConditions, definitions=[], meshPath=""):
+	def __init__(self, name, equationsStr, variables, properties, boundaryConditions, meshDimension=2, definitions=[], meshPath=""):
 		self.name 				= name
-		self.equationStr 		= equationStr
+		self.equationsStr 		= equationsStr
 		self.variables 			= variables
 		self.properties 		= properties
 		self.boundaryConditions = boundaryConditions
 		self.definitions		= definitions
 		self.meshPath 			= meshPath
+		self.meshDimension 		= meshDimension
 
 		self.compiled = False
-		self.equation = Equation(equationStr)
 
-		self.parseDefinitions()
+		self.parseEquations()
 		self.applyEbFVM()
 
-	def parseDefinitions(self):
+	def parseEquations(self):
 		definedNames = [ definition.split(" = ")[0] for definition in self.definitions ]
 		self.definedVars = [ Constant(termStr) if not "[" in definition.split(" = ")[1] else (Vector(termStr) if not "[[" in definition.split(" = ")[1].replace(" ", "") else Matrix(termStr)) for termStr, definition in zip(definedNames, self.definitions)]
 
-		self.equation.updatePropertyVars(self.properties)
-		self.equation.updateVariables(self.variables)
-		self.equation.updateDefinitions(self.definedVars)
+		self.equations = []
+		for equationStr in self.equationsStr:
+			equation = Equation(equationStr)
+			equation.updatePropertyVars(self.properties)
+			equation.updateVariables(self.variables)
+			equation.updateDefinitions(self.definedVars)
+			self.equations.append(equation)
+
+		# Arrange equations and variables
+		eqDimensions = [self.meshDimension if eq.order else 1 for eq in self.equations]
+
+		self.arranjementDict = {"var": dict(), "eq": dict()}
+		self.arranjementDict["var"] = { varName: idx for idx,varName in enumerate(self.variables) }
+		self.arranjementDict["eq"]  = { idx: sum(eqDimensions[:idx]) for idx in range(len(self.equations)) }
 
 	def applyEbFVM(self):
-		self.discretizedEquation = Equation(self.equationStr)
+		self.discretizedEquations = []
+		for equationStr in self.equationsStr:
+			discretizedEquation = Equation(equationStr)
 
-		self.discretizedEquation.updatePropertyVars(self.properties)
-		self.discretizedEquation.updateVariables(self.variables)
-		self.discretizedEquation.updateDefinitions(self.definedVars)
-		self.discretizedEquation.integrateInSpace()				# a = b -> iiint(a) = iiint(b)
-		self.discretizedEquation.applyDivergenceTheorem()		# iiint(div(f)) = iint(f)
-		self.discretizedEquation.integrateInTime()				# d/dt(f) = (f-f_old)*(1/Δt)
-		self.discretizedEquation.isolateVariables(self.variables) # x+a=y+c -> x-y=-a+c
-		self.discretizedEquation.unapplyLinearProperty()
+			discretizedEquation.updatePropertyVars(self.properties)
+			discretizedEquation.updateVariables(self.variables)
+			discretizedEquation.updateDefinitions(self.definedVars)
+			discretizedEquation.integrateInSpace()				# a = b -> iiint(a) = iiint(b)
+			discretizedEquation.applyDivergenceTheorem()		# iiint(div(f)) = iint(f)
+			discretizedEquation.integrateInTime()				# d/dt(f) = (f-f_old)*(1/Δt)
+			discretizedEquation.isolateVariables(self.variables) # x+a=y+c -> x-y=-a+c
+			discretizedEquation.unapplyLinearProperty()
+
+			self.discretizedEquations.append(discretizedEquation)
 
 	def compile(self, fileName="results.py"):
 		name = self.name.lower()[0] + "".join(self.name.split())[1:]
 		self.fileName = fileName
 		# self.fileName = "_".join(self.name.lower().split()) + ".py"
 
-		self.transientEquation = self.equation.isTransient()
-		self.eqDimension = self.equation.getDimension()
+		self.transient = True in [equation.isTransient() for equation in self.equations]
+		sizeStr = str(len(self.variables)) + " * numberOfVertices" if len(self.variables) > 1 else "numberOfVertices"
 
 		self.text = ""
 		def write(ln="", t=0, nl=1):
@@ -77,7 +91,7 @@ class Model:
 		def writeProblemData(t):
 			write(t=t,   ln=f"def {name}(problemData):")
 			write(t=t+1, ln="propertyData 	 = problemData.propertyData")
-			if self.transientEquation:
+			if self.transient:
 				write(t=t+1, ln="timeStep 		 = problemData.timeStep")
 			write(t=t+1, ln="grid 			 = problemData.grid")
 			write(t=t+1, ln="numberOfVertices = grid.numberOfVertices")
@@ -87,13 +101,14 @@ class Model:
 
 		def writeFields(t):
 			for fieldName in self.variables:
-				write(t=t, ln=f"old{fieldName.capitalize()}Field = problemData.initialValues['{fieldName}'].copy()")
+				if self.transient:
+					write(t=t, ln=f"old{fieldName.capitalize()}Field = problemData.initialValues['{fieldName}'].copy()")
 				write(t=t, ln=f"{fieldName}Field    = np.repeat(0.0, numberOfVertices)", nl=2)
 		writeFields(1)
 
 		def writeMatrix(t):
-			write(t=t, ln=f"# matrix 		= np.zeros(({len(self.variables)} * numberOfVertices, {len(self.variables)} * numberOfVertices))")
-			write(t=t, ln=f"# independent = np.zeros({len(self.variables)} * numberOfVertices)", nl=2)
+			write(t=t, ln=f"# matrix 		= np.zeros(({sizeStr}, {sizeStr}))")
+			write(t=t, ln=f"# independent = np.zeros({sizeStr})", nl=2)
 		writeMatrix(1)
 
 		def declareProperties(t):
@@ -122,90 +137,100 @@ class Model:
 				write(t=t+2, ln="Nx,Ny,Nz = globalDerivatives")
 				write(t=t+2, ln="zero=np.zeros(Nx.size)")
 				write(t=t+2, ln="return np.array([[Nx,zero,zero],[zero,Ny,zero],[zero,zero,Nz],[Ny,Nx,zero],[zero,Nz,Ny],[Nz,zero,Nx]])", nl=2)
-			if hasSymmetricOperator(self.equation.term):
+			if True in [hasSymmetricOperator(equation.term) for equation in self.equations]:
 				writeSymmetricUtilFuncs(t)
 		writeUtilFuncs(1)
 
 		def assembleMatrix(t):
 			write(t=t, ln="def assembleMatrix():")
-			write(t=t+1, ln=f"matrix = np.zeros(({len(self.variables)} * numberOfVertices, {len(self.variables)} * numberOfVertices))", nl=2)
+			write(t=t+1, ln=f"matrix = np.zeros(({sizeStr}, {sizeStr}))", nl=2)
 
 			def writeMatrixVolumeIntegrals(t):
-				for term in self.discretizedEquation.lhs:
-					if term.__class__ == VolumetricIntegral and term.arg.__class__ == Multiplication:
-						hasVar = False
-						for varName in self.variables:
-							if varName in map(lambda v:v.name, term.arg.args):
-								hasVar = True
-								termStr = str(term.arg).replace("Δt", "timeStep")
-								coeffStr = "vertex.volume * " + termStr.replace(f"* {varName}", "")
+				for discretizedEquation in self.discretizedEquations:
+					for term in discretizedEquation.lhs:
+						if term.__class__ == VolumetricIntegral and term.arg.__class__ == Multiplication:
+							hasVar = False
+							for varName in self.variables:
+								if varName in map(lambda v:v.name, term.arg.args):
+									hasVar = True
+									termStr = str(term.arg).replace("Δt", "timeStep")
+									coeffStr = "vertex.volume * " + termStr.replace(f"* {varName}", "")
 
-								# In the future implement regions here!!!
-								write(t=t, ln="# " + termStr)
-								write(t=t, ln="for vertex in grid.vertices:")
-								write(t=t+1, ln="matrix[vertex.handle][vertex.handle] += " + coeffStr, nl=2)
+									# In the future implement regions here!!!
+									idxStr = "+" + str(self.arranjementDict["var"][varName]) + "*numberOfVertices" if len(self.variables) > 1 else ""
+									write(t=t, ln="# " + termStr)
+									write(t=t, ln="for vertex in grid.vertices:")
+									write(t=t+1, ln=f"matrix[vertex.handle{idxStr}][vertex.handle{idxStr}] += " + coeffStr, nl=2)
 
-						if not hasVar:
+							if not hasVar:
+								raise Exception(f"Warning: Term {term} is being ignored")
+						elif term.__class__ == VolumetricIntegral:
 							raise Exception(f"Warning: Term {term} is being ignored")
-					elif term.__class__ == VolumetricIntegral:
-						raise Exception(f"Warning: Term {term} is being ignored")
 			writeMatrixVolumeIntegrals(t+1)
 
 			def writeMatrixSurfaceGradIntegrals(t):
-				for term in self.discretizedEquation.lhs:
-					if term.__class__ == SurfaceIntegral and term.arg.__class__ == Multiplication:
-						gradTerms = [arg for arg in term.arg.args if hasSubclass(arg, Gradient)]
-						if gradTerms and hasSubclass(gradTerms[0].arg, Scalar):
-							grad = gradTerms[0]
+				for discretizedEquation in self.discretizedEquations:
+					for term in discretizedEquation.lhs:
+						if term.__class__ == SurfaceIntegral and term.arg.__class__ == Multiplication:
+							gradTerms = [arg for arg in term.arg.args if hasSubclass(arg, Gradient)]
+							if gradTerms and hasSubclass(gradTerms[0].arg, Scalar):
+								grad = gradTerms[0]
+								var = getTermFields(grad)[0]
+								idxStr = "+" + str(self.arranjementDict["var"][var.name]) + "*numberOfVertices" if len(self.variables) > 1 else ""
 
-							coeff = Multiplication(*[arg for arg in term.arg.args if arg != grad])
-							coeffStr = str(coeff)
+								coeff = Multiplication(*[arg for arg in term.arg.args if arg != grad])
+								coeffStr = str(coeff)
 
-							write(t=t+0, ln="# " + str(term.arg))
-							write(t=t+0, ln="for element in grid.elements:")
-							write(t=t+1, ln="for innerFace in element.innerFaces:")
-							write(t=t+2, ln="area = innerFace.area.getCoordinates()[:dimension]")
-							write(t=t+2, ln=f"coefficients = {coeffStr} * np.matmul( area.T, innerFace.globalDerivatives )")
-							write(t=t+2, ln="backwardVertexHandle, forwardVertexHandle = innerFace.getNeighborVerticesHandles()", nl=2)
-							write(t=t+2, ln="for local, vertex in enumerate(element.vertices):")
-							write(t=t+3, ln="matrix[backwardVertexHandle][vertex.handle] += coefficients[local]")
-							write(t=t+3, ln="matrix[forwardVertexHandle][vertex.handle]  -= coefficients[local]", nl=2)
+								write(t=t+0, ln="# " + str(term.arg))
+								write(t=t+0, ln="for element in grid.elements:")
+								write(t=t+1, ln="for innerFace in element.innerFaces:")
+								write(t=t+2, ln="area = innerFace.area.getCoordinates()[:dimension]")
+								write(t=t+2, ln=f"coefficients = {coeffStr} * np.matmul( area.T, innerFace.globalDerivatives )")
+								write(t=t+2, ln="backwardVertexHandle, forwardVertexHandle = innerFace.getNeighborVerticesHandles()", nl=2)
+								write(t=t+2, ln="for local, vertex in enumerate(element.vertices):")
+								write(t=t+3, ln=f"matrix[backwardVertexHandle{idxStr}][vertex.handle{idxStr}] += coefficients[local]")
+								write(t=t+3, ln=f"matrix[forwardVertexHandle{idxStr}][vertex.handle{idxStr}]  -= coefficients[local]", nl=2)
 			writeMatrixSurfaceGradIntegrals(t+1)
 
 			def writeMatrixSurfaceSymmetricGradVecIntegrals(t):
-				for term in self.discretizedEquation.lhs:
-					if term.__class__ == SurfaceIntegral and term.arg.__class__ == Multiplication:
-						gradTerms = [arg for arg in term.arg.args if hasSubclass(arg, SymmetricGradient)]
-						if gradTerms and hasSubclass(gradTerms[0].arg, Vector):
-							grad = gradTerms[0]
+				for eqIdx, discretizedEquation in enumerate(self.discretizedEquations):
+					for term in discretizedEquation.lhs:
+						if term.__class__ == SurfaceIntegral and term.arg.__class__ == Multiplication:
+							gradTerms = [arg for arg in term.arg.args if hasSubclass(arg, SymmetricGradient)]
+							if gradTerms and hasSubclass(gradTerms[0].arg, Vector):
+								grad = gradTerms[0]
 
-							coeff = Multiplication(*[arg for arg in term.arg.args if arg != grad])
-							coeffStr = str(coeff)
+								coeff = Multiplication(*[arg for arg in term.arg.args if arg != grad])
+								coeffStr = str(coeff)
 
-							write(t=t, ln=f"# {term.arg}")
-							write(t=t, ln="for element in grid.elements:")
-							write(t=t+1, ln="for innerFace in element.innerFaces:")
-							write(t=t+2, ln="transposedVoigtArea = getTransposedVoigtArea(innerFace)")
-							write(t=t+2, ln="voigtGradientOperator = getVoigtGradientOperator(innerFace.globalDerivatives)")
-							write(t=t+2, ln=f"coeff = {coeffStr}")
-							write(t=t+2, ln="matrixCoefficient = np.einsum('ij,jk,kmn->imn', transposedVoigtArea, coeff, voigtGradientOperator)", nl=2)
-							write(t=t+2, ln="backwardsHandle, forwardHandle = innerFace.getNeighborVerticesHandles()", nl=2)
-							write(t=t+2, ln="for local, vertex in enumerate(element.vertices):")
-							write(t=t, ln="			for i in range(dimension):")
-							write(t=t, ln="				for j in range(dimension):")
-							write(t=t, ln="					matrix[backwardsHandle + numberOfVertices*i][vertex.handle + numberOfVertices*j] += matrixCoefficient[i][j][local]")
-							write(t=t, ln="					matrix[forwardHandle   + numberOfVertices*i][vertex.handle + numberOfVertices*j] -= matrixCoefficient[i][j][local]", nl=2)
+								arrIdx = self.arranjementDict["eq"][eqIdx]
+								idxStr = lambda ref: f"numberOfVertices*{ref}" if (len(self.equations)==1 or arrIdx==0) else f"numberOfVertices*({ref}+{arrIdx})"
+
+								write(t=t, ln=f"# {term.arg}")
+								write(t=t, ln="for element in grid.elements:")
+								write(t=t+1, ln="for innerFace in element.innerFaces:")
+								write(t=t+2, ln="transposedVoigtArea = getTransposedVoigtArea(innerFace)")
+								write(t=t+2, ln="voigtGradientOperator = getVoigtGradientOperator(innerFace.globalDerivatives)")
+								write(t=t+2, ln=f"coeff = {coeffStr}")
+								write(t=t+2, ln="matrixCoefficient = np.einsum('ij,jk,kmn->imn', transposedVoigtArea, coeff, voigtGradientOperator)", nl=2)
+								write(t=t+2, ln="backwardsHandle, forwardHandle = innerFace.getNeighborVerticesHandles()", nl=2)
+								write(t=t+2, ln="for local, vertex in enumerate(element.vertices):")
+								write(t=t, ln="			for i in range(dimension):")
+								write(t=t, ln="				for j in range(dimension):")
+								write(t=t, ln=f"					matrix[backwardsHandle + {idxStr('i')}][vertex.handle + {idxStr('j')}] += matrixCoefficient[i][j][local]")
+								write(t=t, ln=f"					matrix[forwardHandle   + {idxStr('i')}][vertex.handle + {idxStr('j')}] -= matrixCoefficient[i][j][local]", nl=2)
 
 
 			writeMatrixSurfaceSymmetricGradVecIntegrals(t+1)
 
 			def writeMatrixDirichletBoundaryConditions(t):
+				write(t=t+0, ln="# Dirichlet Boundary Conditions")
 				for variableName in self.variables:
-					write(t=t+0, ln="# Dirichlet Boundary Conditions")
+					idxStr = "+" + str(self.arranjementDict["var"][variableName]) + "*numberOfVertices" if len(self.variables) > 1 else ""
 					write(t=t+0, ln=f"for bCondition in problemData.dirichletBoundaries['{variableName}']:")
 					write(t=t+1, ln="for vertex in bCondition.boundary.vertices:")
-					write(t=t+2, ln=f"matrix[vertex.handle] = np.zeros({len(self.variables)} * numberOfVertices)")
-					write(t=t+2, ln="matrix[vertex.handle][vertex.handle] = 1.0", nl=2)
+					write(t=t+2, ln=f"matrix[vertex.handle{idxStr}] = np.zeros({sizeStr})")
+					write(t=t+2, ln=f"matrix[vertex.handle{idxStr}][vertex.handle{idxStr}] = 1.0", nl=2)
 			writeMatrixDirichletBoundaryConditions(t+1)
 
 			def inverseMatrix(t):
@@ -217,59 +242,64 @@ class Model:
 
 		def assembleIndependent(t):
 			write(t=t, ln="def assembleIndependent():")
-			write(t=t+1, ln=f"independent = np.zeros({len(self.variables)} * numberOfVertices)", nl=2)
+			write(t=t+1, ln=f"independent = np.zeros({sizeStr})", nl=2)
 
 			def writeIndependentVolumeIntegral(t):
-				for term in self.discretizedEquation.rhs:
-					if term.__class__ == VolumetricIntegral and (term.arg.__class__ == Multiplication or hasSubclass(term.arg, Variable)):
+				for eqIdx, (equation, discretizedEquation) in enumerate(zip(self.equations, self.discretizedEquations)):
+					for term in discretizedEquation.rhs:
+						if term.__class__ == VolumetricIntegral and (term.arg.__class__ == Multiplication or hasSubclass(term.arg, Variable)):
 
-						# AINDA PRECISA TRATAR AS VARIÁVEIS DE CAMPO
+							# AINDA PRECISA TRATAR AS VARIÁVEIS DE CAMPO
 
-						termStr = str(term.arg).replace("Δt", "timeStep")
-						coeffStr = "vertex.volume * " + termStr
+							termStr = str(term.arg).replace("Δt", "timeStep")
+							coeffStr = "vertex.volume * " + termStr
 
-						for field in getTermFields(term.arg):
-							if "_old" in field.name:
-								fieldName = field.name.replace("_old", "").capitalize()
-								coeffStr = coeffStr.replace(f" {field.name}", f" old{fieldName}Field[vertex.handle]")
-							else:
-								coeffStr = coeffStr.replace(f" {field.name}", f" {field.name}Field[vertex.handle]")
+							for field in getTermFields(term.arg):
+								if "_old" in field.name:
+									fieldName = field.name.replace("_old", "").capitalize()
+									coeffStr = coeffStr.replace(f" {field.name}", f" old{fieldName}Field[vertex.handle]")
+								else:
+									coeffStr = coeffStr.replace(f" {field.name}", f" {field.name}Field[vertex.handle]")
 
-						if self.eqDimension == 0:
-							write(t=t, ln="# " + termStr)
-							write(t=t, ln="for vertex in grid.vertices:")
-							write(t=t+1, ln="independent[vertex.handle] += " + coeffStr, nl=2)
-						elif self.eqDimension == 1:
-							for arg in (term.arg.args if hasSubclass(term.arg, Operator) else term.arg):
-								if hasSubclass(arg, Vector):
-									coeffStr = coeffStr.replace(str(arg), f"{arg}[coord]")
-							write(t=t, ln="# " + termStr)
-							write(t=t, ln="for vertex in grid.vertices:")
-							write(t=t+1, ln="for coord in range(dimension):")							
-							write(t=t+2, ln="independent[vertex.handle] += " + coeffStr, nl=2)
+							if equation.order == 0:
+								idxStr = "+" + str(self.arranjementDict["eq"][eqIdx]) + "*numberOfVertices" if len(self.variables) > 1 else ""
+								write(t=t, ln="# " + termStr)
+								write(t=t, ln="for vertex in grid.vertices:")
+								write(t=t+1, ln=f"independent[vertex.handle{idxStr}] += " + coeffStr, nl=2)
+							elif equation.order == 1:
+								arrIdx = self.arranjementDict["eq"][eqIdx]
+								idxStr = "+" + (f"(coord+{arrIdx})" if arrIdx else "coord") + "*numberOfVertices"
+								for arg in (term.arg.args if hasSubclass(term.arg, Operator) else term.arg):
+									if hasSubclass(arg, Vector):
+										coeffStr = coeffStr.replace(str(arg), f"{arg}[coord]")
+								write(t=t, ln="# " + termStr)
+								write(t=t, ln="for vertex in grid.vertices:")
+								write(t=t+1, ln="for coord in range(dimension):")							
+								write(t=t+2, ln=f"independent[vertex.handle{idxStr}] += " + coeffStr, nl=2)
 
-
-					elif term.__class__ == VolumetricIntegral:
-						raise Exception(f"Warning: Term {term} is being ignored")
+						elif term.__class__ == VolumetricIntegral:
+							raise Exception(f"Warning: Term {term} is being ignored")
 			writeIndependentVolumeIntegral(t+1)
-
-			def writeDirichletBoundaryConditions(t):
-				for variableName in self.variables:
-					write(t=t+0, ln="# Dirichlet Boundary Condition")
-					write(t=t+0, ln=f"for bCondition in problemData.dirichletBoundaries['{variableName}']:")
-					write(t=t+1, ln="for vertex in bCondition.boundary.vertices:")
-					write(t=t+2, ln="independent[vertex.handle] = bCondition.getValue(vertex.handle)", nl=2)
-			writeDirichletBoundaryConditions(t+1)
 
 			def writeNeumannBoundaryConditions(t):
 				# O SINAL SERÁ DETERMINADO POR QUAL LADO DO IGUAL O DIVERGENTE ESTÁ
+				write(t=t+0, ln="# Neumann Boundary Condition")
 				for variableName in self.variables:
-					write(t=t+0, ln="# Neumann Boundary Condition")
+					idxStr = "+" + str(self.arranjementDict["var"][variableName]) + "*numberOfVertices" if len(self.variables) > 1 else ""
 					write(t=t+0, ln=f"for bCondition in problemData.neumannBoundaries['{variableName}']:")
 					write(t=t+1, ln="for facet in bCondition.boundary.facets:")
 					write(t=t+2, ln="for outerFace in facet.outerFaces:")
-					write(t=t+3, ln="independent[outerFace.vertex.handle] -= bCondition.getValue(outerFace.handle) * np.linalg.norm(outerFace.area.getCoordinates())", nl=2)
+					write(t=t+3, ln=f"independent[outerFace.vertex.handle{idxStr}] -= bCondition.getValue(outerFace.handle) * np.linalg.norm(outerFace.area.getCoordinates())", nl=2)
 			writeNeumannBoundaryConditions(t+1)
+
+			def writeDirichletBoundaryConditions(t):
+				write(t=t+0, ln="# Dirichlet Boundary Condition")
+				for variableName in self.variables:
+					idxStr = "+" + str(self.arranjementDict["var"][variableName]) + "*numberOfVertices" if len(self.variables) > 1 else ""
+					write(t=t+0, ln=f"for bCondition in problemData.dirichletBoundaries['{variableName}']:")
+					write(t=t+1, ln="for vertex in bCondition.boundary.vertices:")
+					write(t=t+2, ln=f"independent[vertex.handle{idxStr}] = bCondition.getValue(vertex.handle)", nl=2)
+			writeDirichletBoundaryConditions(t+1)
 
 			write(t=t+1, ln="return independent", nl=2)
 		assembleIndependent(1)
@@ -289,14 +319,21 @@ class Model:
 			else:
 				write("")
 				write(t=t+1, ln=f"results = np.matmul(inverseMatrix, independent)")
-				for i, variable in enumerate(self.variables):
-					write(t=t+1, ln=f"{variable}Field = results[{i}*numberOfVertices:{i+1}*numberOfVertices]")
+				for i, variableName in enumerate(self.variables):
+					write(t=t+1, ln=f"{variableName}Field = results[{i}*numberOfVertices:{i+1}*numberOfVertices]")
 				write("")
-			write(t=t+1, ln=f"difference = max( abs({self.variables[0]}Field - old{self.variables[0].capitalize()}Field) )")
-			write(t=t+1, ln=f"old{self.variables[0].capitalize()}Field = {self.variables[0]}Field.copy()")
+			if len(self.variables) == 1:
+				write(t=t+1, ln=f"difference = max( abs({self.variables[0]}Field - old{self.variables[0].capitalize()}Field) )", nl=2)
+			else:
+				write(t=t+1, ln=f"difference = max( {', '.join(['max(abs('+varName+'Field - old'+varName.capitalize()+'Field))' for varName in self.variables])} )", nl=2)
+			for variableName in self.variables:
+				write(t=t+1, ln=f"old{variableName.capitalize()}Field = {variableName}Field.copy()")
+			write("")
 			write(t=t+1, ln="currentTime += timeStep")
 			write(t=t+1, ln="iteration += 1", nl=2)
-			write(t=t+1, ln=f"saver.save('{self.variables[0]}', {self.variables[0]}Field, currentTime)", nl=2)
+			for variableName in self.variables:
+				write(t=t+1, ln=f"saver.save('{variableName}', {variableName}Field, currentTime)")
+			write("")
 			write(t=t+1, ln="print('{:>9}\t{:>14.2e}\t{:>14.2e}\t{:>14.2e}'.format(iteration, currentTime, timeStep, difference))")
 			write(t=t+1, ln="converged = ( difference <= tolerance ) or ( currentTime >= problemData.finalTime ) or ( iteration >= problemData.maxNumberOfIterations )", nl=2)
 			write(t=t+1, ln="if iteration >= problemData.maxNumberOfIterations:")
@@ -310,13 +347,13 @@ class Model:
 				write(t=t, ln=f"{self.variables[0]}Field = np.matmul(inverseMatrix, independent)")
 			else:
 				write(t=t, ln=f"results = np.matmul(inverseMatrix, independent)")
-				for i, variable in enumerate(self.variables):
-					write(t=t, ln=f"{variable}Field = results[{i}*numberOfVertices:{i+1}*numberOfVertices]")
+				for i, variableName in enumerate(self.variables):
+					write(t=t, ln=f"{variableName}Field = results[{i}*numberOfVertices:{i+1}*numberOfVertices]")
 			write(t=t, ln="")
 			for variable in self.variables:
 				write(t=t, ln=f"saver.save('{variable}', {variable}Field, 0.0)")
 			write(t=t, ln="saver.finalize()", nl=2)
-		if self.transientEquation:
+		if self.transient:
 			writeTransientSolverLoop(1)
 		else:
 			writePermanentSolverLoop(1)
@@ -368,9 +405,7 @@ class Model:
 		if not (self.compiled and self.fileName=="results.py"):
 			self.compile()
 		try:
-			# os.rename(self.fileName, "results.py")
 			from results import main
 			main()
-			# os.rename("results.py", self.fileName)
 		except:
 			raise Exception("Error while compiling file!")
