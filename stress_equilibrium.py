@@ -25,12 +25,11 @@ model = bellbird.Model(
 		bellbird.BoundaryCondition("u_y", bellbird.Neumann, "West", 0.0),
 		bellbird.BoundaryCondition("u_y", bellbird.Neumann, "East", 0.0),
 		bellbird.BoundaryCondition("u_y", bellbird.Dirichlet, "South", 0.0),
-		bellbird.BoundaryCondition("u_y", bellbird.Neumann, "North", -1e4),
+		bellbird.BoundaryCondition("u_y", bellbird.Neumann, "North", 1e4),
 	],
 	meshPath = "../PyEFVLib/meshes/msh/2D/Square.msh",
-	meshDimension = 2,
 )
 
 # print(model.discretizedEquations[0])
-model.compile()
+# model.compile()
 model.run()

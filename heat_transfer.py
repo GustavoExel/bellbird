@@ -20,9 +20,8 @@ model = bellbird.Model(
 		bellbird.BoundaryCondition("temperature", bellbird.Neumann, "North", 0.0),
 	],
 	meshPath = "../PyEFVLib/meshes/msh/2D/Square.msh",
-	meshDimension = 2,
 )
 
 # print(model.discretizedEquations[0])
-model.compile()
-# model.run()
+# model.compile()
+model.run()

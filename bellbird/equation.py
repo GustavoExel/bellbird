@@ -41,7 +41,7 @@ class Equation:
 		self.clusterOperations()
 		self.applyDistributiveProperty()
 
-	def rewrite(self):
+	def rearrange(self):
 		self.applyDistributiveProperty()	# (a+b)*c = a*c + b*c
 		self.clusterOperations()			# times(a, times(b,c)) = times(a, b, c)
 
@@ -51,6 +51,8 @@ class Equation:
 		self.clusterOperations()			# times(a, times(b,c)) = times(a, b, c)
 
 		self.applyLinearProperty()			# f(a*(x+y)) = a*f(x) + a*f(y)
+
+		return self
 
 	def updatePropertyVars(self, properties):
 		propertyVars = properties.keys()
@@ -64,11 +66,11 @@ class Equation:
 
 	def integrateInTime(self):
 		integrateInTime(self.term)
-		self.rewrite()
+		self.rearrange()
 
 	def integrateInSpace(self):
 		self.term.setArgs([ VolumetricIntegral(self.term.args[0]), VolumetricIntegral(self.term.args[1]) ])
-		self.rewrite()
+		self.rearrange()
 
 	def applyDivergenceTheorem(self):
 		applyDivergenceTheorem(self.term)
@@ -84,7 +86,7 @@ class Equation:
 			Sum( *rhsInds, Multiplication(minusOne, *lhsInds) ) if lhsInds else Sum(*rhsInds)
 		)
 
-		self.rewrite()
+		self.rearrange()
 
 	_order = None
 	@property
