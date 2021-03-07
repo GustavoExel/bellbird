@@ -72,9 +72,9 @@ class Model:
 	def compile(self, fileName="results.py"):
 		name = self.name.lower()[0] + "".join(self.name.split())[1:]
 		self.fileName = fileName
-		# self.fileName = "_".join(self.name.lower().split()) + ".py"
 
 		self.transient = True in [equation.isTransient() for equation in self.equations]
+		self.transientFields = [ var.name for equation in self.equations for term in equation.terms if hasTermWithSubclass(term, TimeDerivative) for var in getTermFields(term) ]
 		sizeStr = str(len(self.variables)) + " * numberOfVertices" if len(self.variables) > 1 else "numberOfVertices"
 
 		self.text = ""
@@ -101,9 +101,9 @@ class Model:
 
 		def writeFields(t):
 			for fieldName in self.variables:
-				if self.transient:
-					write(t=t, ln=f"old{fieldName.capitalize()}Field = problemData.initialValues['{fieldName}'].copy()")
-				write(t=t, ln=f"{fieldName}Field    = np.repeat(0.0, numberOfVertices)", nl=2)
+				write(t=t, ln=f"{fieldName}Field    = np.repeat(0.0, numberOfVertices)")
+				if fieldName.split("_")[0] in self.transientFields:
+					write(t=t, ln=f"old{fieldName.capitalize()}Field = problemData.initialValues['{fieldName}'].copy()", nl=2)
 		writeFields(1)
 
 		def writeMatrix(t):
@@ -137,7 +137,7 @@ class Model:
 				write(t=t+2, ln="Nx,Ny,Nz = globalDerivatives")
 				write(t=t+2, ln="zero=np.zeros(Nx.size)")
 				write(t=t+2, ln="return np.array([[Nx,zero,zero],[zero,Ny,zero],[zero,zero,Nz],[Ny,Nx,zero],[zero,Nz,Ny],[Nz,zero,Nx]])", nl=2)
-			if True in [hasSymmetricOperator(equation.term) for equation in self.equations]:
+			if True in [hasTermWithSubclass(equation.term, SymmetricGradient) for equation in self.equations]:
 				writeSymmetricUtilFuncs(t)
 		writeUtilFuncs(1)
 
@@ -282,14 +282,16 @@ class Model:
 			writeIndependentVolumeIntegral(t+1)
 
 			def writeNeumannBoundaryConditions(t):
-				# O SINAL SERÁ DETERMINADO POR QUAL LADO DO IGUAL O DIVERGENTE ESTÁ
+				# This signal implies fluxes inwards
+				plusVars = [ var.name for equation in self.equations for term in equation.lhs if hasTermWithSubclass(term, Divergence) for var in getTermFields(term) ]
 				write(t=t+0, ln="# Neumann Boundary Condition")
 				for variableName in self.variables:
 					idxStr = "+" + str(self.arranjementDict["var"][variableName]) + "*numberOfVertices" if len(self.variables) > 1 else ""
+					signal = "+" if variableName.split("_")[0] in plusVars else "-"
 					write(t=t+0, ln=f"for bCondition in problemData.neumannBoundaries['{variableName}']:")
 					write(t=t+1, ln="for facet in bCondition.boundary.facets:")
 					write(t=t+2, ln="for outerFace in facet.outerFaces:")
-					write(t=t+3, ln=f"independent[outerFace.vertex.handle{idxStr}] -= bCondition.getValue(outerFace.handle) * np.linalg.norm(outerFace.area.getCoordinates())", nl=2)
+					write(t=t+3, ln=f"independent[outerFace.vertex.handle{idxStr}] {signal}= bCondition.getValue(outerFace.handle) * np.linalg.norm(outerFace.area.getCoordinates())", nl=2)
 			writeNeumannBoundaryConditions(t+1)
 
 			def writeDirichletBoundaryConditions(t):
@@ -322,12 +324,14 @@ class Model:
 				for i, variableName in enumerate(self.variables):
 					write(t=t+1, ln=f"{variableName}Field = results[{i}*numberOfVertices:{i+1}*numberOfVertices]")
 				write("")
-			if len(self.variables) == 1:
-				write(t=t+1, ln=f"difference = max( abs({self.variables[0]}Field - old{self.variables[0].capitalize()}Field) )", nl=2)
+			fieldDifferences = ['max(abs('+varName+'Field - old'+varName.capitalize()+'Field))' for varName in self.variables if varName.split('_')[0] in self.transientFields]
+			if len(fieldDifferences) == 1:
+				write(t=t+1, ln=f"difference = {fieldDifferences[0]}", nl=2)
 			else:
-				write(t=t+1, ln=f"difference = max( {', '.join(['max(abs('+varName+'Field - old'+varName.capitalize()+'Field))' for varName in self.variables])} )", nl=2)
+				write(t=t+1, ln=f"difference = max( {', '.join(fieldDifferences)} )", nl=2)
 			for variableName in self.variables:
-				write(t=t+1, ln=f"old{variableName.capitalize()}Field = {variableName}Field.copy()")
+				if variableName.split("_")[0] in self.transientFields:
+					write(t=t+1, ln=f"old{variableName.capitalize()}Field = {variableName}Field.copy()")
 			write("")
 			write(t=t+1, ln="currentTime += timeStep")
 			write(t=t+1, ln="iteration += 1", nl=2)

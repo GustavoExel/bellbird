@@ -33,4 +33,4 @@ model = bellbird.Model(
 
 # print(model.discretizedEquations[0])
 model.compile()
-# model.run()
+model.run()

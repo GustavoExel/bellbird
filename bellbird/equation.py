@@ -23,6 +23,10 @@ class Equation:
 		else:
 			return [ self.term.args[1] ]
 
+	@property
+	def terms(self):
+		return self.lhs + self.rhs
+
 	def applyLinearProperty(self):
 		applyLinearProperty(self.term)
 
@@ -447,11 +451,11 @@ def isTransient(term):
 
 	return False
 
-def hasSymmetricOperator(term):
-	if term.__class__ == SymmetricGradient:
+def hasTermWithSubclass(term, subclass):
+	if hasSubclass(term, subclass):
 		return True
 	elif hasSubclass(term, Operator):
 		for arg in term.args:
-			if hasSymmetricOperator(arg):
+			if hasTermWithSubclass(arg, subclass):
 				return True
 	return False

@@ -32,7 +32,7 @@ model = bellbird.Model(
 		bellbird.BoundaryCondition("u_y", bellbird.Neumann, "West", 0.0),
 		bellbird.BoundaryCondition("u_y", bellbird.Neumann, "East", 0.0),
 		bellbird.BoundaryCondition("u_y", bellbird.Dirichlet, "South", 0.0),
-		bellbird.BoundaryCondition("u_y", bellbird.Neumann, "North", -1e4),
+		bellbird.BoundaryCondition("u_y", bellbird.Neumann, "North", 1e4),
 		bellbird.InitialCondition("temperature", 0.0),
 		bellbird.BoundaryCondition("temperature", bellbird.Neumann, "West", 100.0),
 		bellbird.BoundaryCondition("temperature", bellbird.Dirichlet, "East", 100.0),
@@ -43,7 +43,7 @@ model = bellbird.Model(
 	meshDimension = 2,
 )
 
-# model.compile()
+model.compile()
 model.run()
 
 """
@@ -69,7 +69,8 @@ Plano:
 
 """
 --> PENDÊNCIAS
-	--> Resolver o problema do arranjo e do sinal do fluxo (Neumann)
-	--> Declarar old só pras que precisam
 	--> Largar de forecer a meshDimension e fazer tudo no programa, mais automático
+		--> Começar fornecendo u_x, u_y, u_z
+		--> Restringir usando if dimension == 3: ...
+		--> Ao invés de calcular os números usando meshDimension usar strings
 """
