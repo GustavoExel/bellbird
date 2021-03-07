@@ -381,7 +381,7 @@ def getTermFields(term):
 	return fields
 
 def getDimension(term):
-	if hasSubclass(term, Constant):
+	if hasSubclass(term, Scalar):
 		return 0
 	elif hasSubclass(term, Vector):
 		return 1
@@ -440,4 +440,13 @@ def isTransient(term):
 			if isTransient(arg):
 				return True
 
+	return False
+
+def hasSymmetricOperator(term):
+	if term.__class__ == SymmetricGradient:
+		return True
+	elif hasSubclass(term, Operator):
+		for arg in term.args:
+			if hasSymmetricOperator(arg):
+				return True
 	return False

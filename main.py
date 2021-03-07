@@ -87,6 +87,24 @@ Plano:
 !!!!!!!!!!!!!!!!!!!
 	--> Falta calcular automaticamente as condições de contorno
 	--> falta implementar todos os esquemas pro stress equilibrium
+	--> AINDA TEM MUUUITO PROBLEMA COM O ARRANJO DAS VARIÁVEIS NA MATRIZ [MUUUUUUUUUUUUUUUITO]
+		--> Principalmente porque não podemos tratar as componentes dos vetores muito independentemente
+		--> E também compoenentes de vetores como iiint(rho * g)
+
+	--> Gostaria de fazer uma anotação pertinente sobre condições de contorno:
+		Quando se discretiza uma equação teremos:
+			div(k*X) -> iiint(div(k*X)) -> iint(k*X) --> summ2D(k*X * s)_i
+			-> summ2D(k*X * s)_IN + summ2D(k*X * s)_Neumann + summ2D(k*X * s)_Dirichlet
+			A(X) + div(k*X) = B
+			iiint(A) + iint(k*X)_IN + iint(k*X)_N + iint(k*X)_D = iiint(B)
+				iint_N passa para o rhs pois na cond de neumann o fluxo é dado e n depende de X
+				iint_D desaparece pois se a condição for de dirichlet a eq toda muda
+			iiint(A) + iint(k*X)_IN = iiint(B) - iint(k*X)_N
+			iiint(A) + iint(k*X)_IN = iiint(B) - dot<flux, area>
+
+			por isso no geral fazemos o somatório apenas com as innerFaces
+			a de dirichlet é muito simples...
+
 
 
 """

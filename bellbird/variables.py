@@ -22,7 +22,7 @@ class Matrix(Variable):
 class Tensor(Variable):
 	symbol = "tens"
 
-class Constant(Variable):
+class Constant(Scalar):
 	symbol = "const"
 
 class Field(Variable):

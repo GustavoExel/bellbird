@@ -40,6 +40,7 @@ class Model:
 		self.definedVars = [ Constant(termStr) if not "[" in definition.split(" = ")[1] else (Vector(termStr) if not "[[" in definition.split(" = ")[1].replace(" ", "") else Matrix(termStr)) for termStr, definition in zip(definedNames, self.definitions)]
 
 		self.equation.updatePropertyVars(self.properties)
+		self.equation.updateVariables(self.variables)
 		self.equation.updateDefinitions(self.definedVars)
 
 	def applyEbFVM(self):
@@ -60,6 +61,7 @@ class Model:
 		# self.fileName = "_".join(self.name.lower().split()) + ".py"
 
 		self.transientEquation = self.equation.isTransient()
+		self.eqDimension = self.equation.getDimension()
 
 		self.text = ""
 		def write(ln="", t=0, nl=1):
@@ -90,8 +92,8 @@ class Model:
 		writeFields(1)
 
 		def writeMatrix(t):
-			write(t=t, ln="# matrix 		= np.zeros((numberOfVertices, numberOfVertices))")
-			write(t=t, ln="# independent = np.zeros(numberOfVertices)", nl=2)
+			write(t=t, ln=f"# matrix 		= np.zeros(({len(self.variables)} * numberOfVertices, {len(self.variables)} * numberOfVertices))")
+			write(t=t, ln=f"# independent = np.zeros({len(self.variables)} * numberOfVertices)", nl=2)
 		writeMatrix(1)
 
 		def declareProperties(t):
@@ -100,9 +102,33 @@ class Model:
 			write("")
 		declareProperties(1)
 
+		def writeDefinitions(t):
+			for definition in self.definitions:
+				write(t=t, ln=definition)
+			write("")
+		writeDefinitions(1)
+
+		def writeUtilFuncs(t):
+			def writeSymmetricUtilFuncs(t):
+				write(t=t+0, ln="def getTransposedVoigtArea(innerFace):")
+				write(t=t+1, ln="Sx, Sy, Sz = innerFace.area.getCoordinates()")
+				write(t=t+1, ln="return np.array([[Sx,0,Sy],[0,Sy,Sx]]) if dimension==2 else np.array([[Sx,0,0,Sy,0,Sz],[0,Sy,0,Sx,Sz,0],[0,0,Sz,0,Sy,Sx]])", nl=2)
+				write(t=t+0, ln="def getVoigtGradientOperator(globalDerivatives):")
+				write(t=t+1, ln="if len(globalDerivatives) == 2:")
+				write(t=t+2, ln="Nx,Ny = globalDerivatives")
+				write(t=t+2, ln="zero=np.zeros(Nx.size)")
+				write(t=t+2, ln="return np.array([[Nx,zero],[zero,Ny],[Ny,Nx]])", nl=2)
+				write(t=t+1, ln="if len(globalDerivatives) == 3:")
+				write(t=t+2, ln="Nx,Ny,Nz = globalDerivatives")
+				write(t=t+2, ln="zero=np.zeros(Nx.size)")
+				write(t=t+2, ln="return np.array([[Nx,zero,zero],[zero,Ny,zero],[zero,zero,Nz],[Ny,Nx,zero],[zero,Nz,Ny],[Nz,zero,Nx]])", nl=2)
+			if hasSymmetricOperator(self.equation.term):
+				writeSymmetricUtilFuncs(t)
+		writeUtilFuncs(1)
+
 		def assembleMatrix(t):
 			write(t=t, ln="def assembleMatrix():")
-			write(t=t+1, ln="matrix = np.zeros((numberOfVertices, numberOfVertices))", nl=2)
+			write(t=t+1, ln=f"matrix = np.zeros(({len(self.variables)} * numberOfVertices, {len(self.variables)} * numberOfVertices))", nl=2)
 
 			def writeMatrixVolumeIntegrals(t):
 				for term in self.discretizedEquation.lhs:
@@ -129,7 +155,7 @@ class Model:
 				for term in self.discretizedEquation.lhs:
 					if term.__class__ == SurfaceIntegral and term.arg.__class__ == Multiplication:
 						gradTerms = [arg for arg in term.arg.args if hasSubclass(arg, Gradient)]
-						if gradTerms:
+						if gradTerms and hasSubclass(gradTerms[0].arg, Scalar):
 							grad = gradTerms[0]
 
 							coeff = Multiplication(*[arg for arg in term.arg.args if arg != grad])
@@ -146,12 +172,39 @@ class Model:
 							write(t=t+3, ln="matrix[forwardVertexHandle][vertex.handle]  -= coefficients[local]", nl=2)
 			writeMatrixSurfaceGradIntegrals(t+1)
 
+			def writeMatrixSurfaceSymmetricGradVecIntegrals(t):
+				for term in self.discretizedEquation.lhs:
+					if term.__class__ == SurfaceIntegral and term.arg.__class__ == Multiplication:
+						gradTerms = [arg for arg in term.arg.args if hasSubclass(arg, SymmetricGradient)]
+						if gradTerms and hasSubclass(gradTerms[0].arg, Vector):
+							grad = gradTerms[0]
+
+							coeff = Multiplication(*[arg for arg in term.arg.args if arg != grad])
+							coeffStr = str(coeff)
+
+							write(t=t, ln=f"# {term.arg}")
+							write(t=t, ln="for element in grid.elements:")
+							write(t=t+1, ln="for innerFace in element.innerFaces:")
+							write(t=t+2, ln="transposedVoigtArea = getTransposedVoigtArea(innerFace)")
+							write(t=t+2, ln="voigtGradientOperator = getVoigtGradientOperator(innerFace.globalDerivatives)")
+							write(t=t+2, ln=f"coeff = {coeffStr}")
+							write(t=t+2, ln="matrixCoefficient = np.einsum('ij,jk,kmn->imn', transposedVoigtArea, coeff, voigtGradientOperator)", nl=2)
+							write(t=t+2, ln="backwardsHandle, forwardHandle = innerFace.getNeighborVerticesHandles()", nl=2)
+							write(t=t+2, ln="for local, vertex in enumerate(element.vertices):")
+							write(t=t, ln="			for i in range(dimension):")
+							write(t=t, ln="				for j in range(dimension):")
+							write(t=t, ln="					matrix[backwardsHandle + numberOfVertices*i][vertex.handle + numberOfVertices*j] += matrixCoefficient[i][j][local]")
+							write(t=t, ln="					matrix[forwardHandle   + numberOfVertices*i][vertex.handle + numberOfVertices*j] -= matrixCoefficient[i][j][local]", nl=2)
+
+
+			writeMatrixSurfaceSymmetricGradVecIntegrals(t+1)
+
 			def writeMatrixDirichletBoundaryConditions(t):
 				for variableName in self.variables:
 					write(t=t+0, ln="# Dirichlet Boundary Conditions")
 					write(t=t+0, ln=f"for bCondition in problemData.dirichletBoundaries['{variableName}']:")
 					write(t=t+1, ln="for vertex in bCondition.boundary.vertices:")
-					write(t=t+2, ln="matrix[vertex.handle] = np.zeros(numberOfVertices)")
+					write(t=t+2, ln=f"matrix[vertex.handle] = np.zeros({len(self.variables)} * numberOfVertices)")
 					write(t=t+2, ln="matrix[vertex.handle][vertex.handle] = 1.0", nl=2)
 			writeMatrixDirichletBoundaryConditions(t+1)
 
@@ -164,7 +217,7 @@ class Model:
 
 		def assembleIndependent(t):
 			write(t=t, ln="def assembleIndependent():")
-			write(t=t+1, ln="independent = np.zeros(numberOfVertices)", nl=2)
+			write(t=t+1, ln=f"independent = np.zeros({len(self.variables)} * numberOfVertices)", nl=2)
 
 			def writeIndependentVolumeIntegral(t):
 				for term in self.discretizedEquation.rhs:
@@ -182,9 +235,19 @@ class Model:
 							else:
 								coeffStr = coeffStr.replace(f" {field.name}", f" {field.name}Field[vertex.handle]")
 
-						write(t=t, ln="# " + termStr)
-						write(t=t, ln="for vertex in grid.vertices:")
-						write(t=t+1, ln="independent[vertex.handle] += " + coeffStr, nl=2)
+						if self.eqDimension == 0:
+							write(t=t, ln="# " + termStr)
+							write(t=t, ln="for vertex in grid.vertices:")
+							write(t=t+1, ln="independent[vertex.handle] += " + coeffStr, nl=2)
+						elif self.eqDimension == 1:
+							for arg in (term.arg.args if hasSubclass(term.arg, Operator) else term.arg):
+								if hasSubclass(arg, Vector):
+									coeffStr = coeffStr.replace(str(arg), f"{arg}[coord]")
+							write(t=t, ln="# " + termStr)
+							write(t=t, ln="for vertex in grid.vertices:")
+							write(t=t+1, ln="for coord in range(dimension):")							
+							write(t=t+2, ln="independent[vertex.handle] += " + coeffStr, nl=2)
+
 
 					elif term.__class__ == VolumetricIntegral:
 						raise Exception(f"Warning: Term {term} is being ignored")
@@ -199,12 +262,13 @@ class Model:
 			writeDirichletBoundaryConditions(t+1)
 
 			def writeNeumannBoundaryConditions(t):
+				# O SINAL SERÁ DETERMINADO POR QUAL LADO DO IGUAL O DIVERGENTE ESTÁ
 				for variableName in self.variables:
 					write(t=t+0, ln="# Neumann Boundary Condition")
 					write(t=t+0, ln=f"for bCondition in problemData.neumannBoundaries['{variableName}']:")
 					write(t=t+1, ln="for facet in bCondition.boundary.facets:")
 					write(t=t+2, ln="for outerFace in facet.outerFaces:")
-					write(t=t+3, ln="independent[outerFace.vertex.handle] += bCondition.getValue(outerFace.handle) * np.linalg.norm(outerFace.area.getCoordinates())", nl=2)
+					write(t=t+3, ln="independent[outerFace.vertex.handle] -= bCondition.getValue(outerFace.handle) * np.linalg.norm(outerFace.area.getCoordinates())", nl=2)
 			writeNeumannBoundaryConditions(t+1)
 
 			write(t=t+1, ln="return independent", nl=2)
@@ -223,11 +287,11 @@ class Model:
 			if len(self.variables) == 1:
 				write(t=t+1, ln=f"{self.variables[0]}Field = np.matmul(inverseMatrix, independent)", nl=2)
 			else:
-				write(t=t+1, ln="")
+				write("")
 				write(t=t+1, ln=f"results = np.matmul(inverseMatrix, independent)")
 				for i, variable in enumerate(self.variables):
 					write(t=t+1, ln=f"{variable}Field = results[{i}*numberOfVertices:{i+1}*numberOfVertices]")
-				write(t=t+1, ln="")
+				write("")
 			write(t=t+1, ln=f"difference = max( abs({self.variables[0]}Field - old{self.variables[0].capitalize()}Field) )")
 			write(t=t+1, ln=f"old{self.variables[0].capitalize()}Field = {self.variables[0]}Field.copy()")
 			write(t=t+1, ln="currentTime += timeStep")
@@ -288,7 +352,7 @@ class Model:
 						write(t=t+4, ln=f"'InitialValue': {bc.value},")
 					if bc.__class__ == BoundaryCondition and bc.variableName == variableName:
 						write(t=t+4, ln=f"'{bc.boundaryName}': {{ 'condition' : PyEFVLib.{bc.condition}, 'type' : PyEFVLib.Constant, 'value' : {bc.value} }},")
-				write(t=t+1, ln="\t\t}")
+				write(t=t+1, ln="\t\t},")
 			write(t=t+2, ln="}),\n\t)\n")
 			write(t=t+1, ln=f"{name}( problemData )", nl=2)
 			write(t=t+0, ln="if __name__ == '__main__':")
