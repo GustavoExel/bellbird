@@ -4,7 +4,10 @@ class Variable:
 		self.name = name
 
 	def __repr__(self):
+		return self.name
 		# return f"{self.symbol}({self.name})"
+
+	def __str__(self):
 		return self.name
 
 	def setVarName(self, name):
@@ -52,7 +55,7 @@ minusOne				= Constant("(-1)")
 zero					= Constant("0")
 one 					= Constant("1")
 zeroVec					= Vector("0")
-
+identityTensor			= Tensor("I")
 
 variablesDict = {
 	"timeDifferential"		: timeDifferential,
@@ -68,4 +71,5 @@ variablesDict = {
 	"one"					: one,
 	"1"						: one,
 	"zeroVec"				: zeroVec,
+	"I"						: identityTensor,
 }

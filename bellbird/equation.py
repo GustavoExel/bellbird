@@ -7,6 +7,9 @@ class Equation:
 		self.term = parseEquationStr(self.equationStr)
 
 	def __repr__(self):
+		return repr(self.term)
+
+	def __str__(self):
 		return str(self.term)
 
 	@property
@@ -82,8 +85,8 @@ class Equation:
 		rhsInds = [ term for term in self.rhs if not containsVariables(term, variables) ]
 
 		self.term = Equals( 
-			Sum( *lhsVars, Multiplication(minusOne, *rhsVars) ) if rhsVars else Sum(*lhsVars),
-			Sum( *rhsInds, Multiplication(minusOne, *lhsInds) ) if lhsInds else Sum(*rhsInds)
+			Sum( *lhsVars, Multiplication(minusOne, Sum(*rhsVars)) ) if rhsVars else Sum(*lhsVars),
+			Sum( *rhsInds, Multiplication(minusOne, Sum(*lhsInds)) ) if lhsInds else Sum(*rhsInds)
 		)
 
 		self.rearrange()
@@ -191,6 +194,8 @@ def updateVariables(term, variableNames):
 				term.args[idx] = ScalarField(arg.name)
 			elif arg.name in [varName.replace("_x","") for varName in variableNames if "_x" in varName]:
 				term.args[idx] = VectorField(arg.name)
+			# elif arg.__class__ == Variable and arg.name.isnumeric():
+			# 	term.args[idx] = Constant(arg.name)
 
 		if hasSubclass(arg, Operator):
 			updateVariables(arg, variableNames)	
@@ -206,6 +211,7 @@ def updateDefinitions(term, definedVars):
 			updateDefinitions(arg, definedVars)	
 
 def applyLinearProperty(term, flag=1):
+	# f(a * X) = a * f(X)
 	for idx, arg in enumerate(term.args):
 		function = arg.__class__
 		if hasSubclass(arg, Function) and arg.linear:
@@ -290,7 +296,7 @@ def applyDistributiveProperty(term, flag=1):
 	if flag > 0:
 		applyDistributiveProperty(term, flag-1)
 
-def clusterOperations(term, flag=5):
+def clusterOperations(term, flag=6):
 	for idx, arg in enumerate(term.args):
 		# Multiplication(A, Multiplication(B, C)) -> Multiplication(A, B, C)
 		if hasSubclass(arg, Multiplication):
@@ -364,12 +370,45 @@ def clusterOperations(term, flag=5):
 			if arg.name == "0":
 				term.args[idx] = zeroVec
 
+		# d/dt(div(X)) -> div(d/dt(X))
+		# Done to use the divergence theorem
+		if hasSubclass(arg, TimeDerivative):
+			if hasSubclass(arg.arg, Divergence):
+				term.args[idx] = Divergence(TimeDerivative( arg.arg.arg ))
+
+		# # 1+1 -> 2
+		# if hasSubclass(arg, BinaryOperator):
+		# 	numericArgs = [oArg for oArg in arg.args if hasSubclass(oArg, Variable) and oArg.name.isnumeric()]
+		# 	if len(numericArgs) >= 2:
+		# 		numericalResult = eval(str(arg.__class__(*numericArgs)))
+		# 		arg.args = [Constant(str(numericalResult))] + [oArg for oArg in arg.args if not oArg in numericArgs]
+
+		# # a + a + a -> 3*a
+		# if hasSubclass(arg, Operator):
+		# 	repeatedArgs = [oArg for oArg in arg.args if list(map(str,arg.args)).count(str(oArg))>1]
+		# 	repeatedArgs = [oArg for idx,oArg in enumerate(repeatedArgs) if not str(oArg) in map(str,repeatedArgs[:idx])]
+		# 	for rArg in repeatedArgs:
+		# 		numberOfTimes = list(map(str,arg.args)).count(str(rArg))
+		# 		arg.args = [Multiplication(Constant(str(numberOfTimes)), rArg)] + [oArg for oArg in arg.args if not str(oArg)==str(rArg)]
+
+		# # n*x*A + k*y*A + B -> (n*x+k*y) * A + B
+		# if hasSubclass(arg, Sum):
+		# 	variables = [var for var in getTermVars(arg) if not var.name.isnumeric()]
+		# 	variables = [var for idx,var in enumerate(variables) if var.name not in map(str,variables[:idx])]
+		# 	for var in variables:
+		# 		sharingTerms = [sArg for sArg in arg.args if hasSubclass(sArg,Multiplication) and var.name in map(str,sArg.args)]
+		# 		if len(sharingTerms)>1:
+		# 			for sTerm in sharingTerms:
+		# 				sTerm.args = [stArg for stArg in sTerm.args if str(var)!=str(stArg)]
+		# 				arg.args.remove(sTerm)
+		# 			arg.args.append( Multiplication(Sum(*sharingTerms), var) )
+
 		if hasSubclass(arg, Operator):
 			clusterOperations(arg, flag+1)
 
 	if flag > 0:
 		clusterOperations(term, flag-1)
-
+		
 def containsVariables(term, variables):
 	if hasSubclass(term, Variable):
 		return term.name in variables + [varName.replace("_x", "") for varName in variables if "_x" in varName]
@@ -378,6 +417,7 @@ def containsVariables(term, variables):
 		for arg in term.args:
 			if containsVariables(arg, variables):
 				return True
+
 		return False
 
 def getTermFields(term):
@@ -391,6 +431,26 @@ def getTermFields(term):
 
 	return fields
 
+def getTermVars(term):
+	if hasSubclass(term, Variable):
+		return [term]
+	
+	variables = []
+	if hasSubclass(term, Operator):
+		for arg in term.args:
+			variables += getTermVars(arg)
+
+	return variables
+
+def hasTermWithSubclass(term, subclass):
+	if hasSubclass(term, subclass):
+		return True
+	elif hasSubclass(term, Operator):
+		for arg in term.args:
+			if hasTermWithSubclass(arg, subclass):
+				return True
+	return False
+
 def getOrder(term):
 	if hasSubclass(term, Scalar):
 		return 0
@@ -401,7 +461,7 @@ def getOrder(term):
 	elif hasSubclass(term, Tensor):
 		return 3
 	elif hasSubclass(term, Function):
-		if term.__class__ in [TimeDerivative, TimeIntegral, VolumetricIntegral, SurfaceIntegral, VolumetricSummatory, SurfaceSummatory]:
+		if term.__class__ in [TimeDerivative, TimeIntegral, VolumetricIntegral, SurfaceIntegral, VolumetricSummation, SurfaceSummation]:
 			return getOrder(term.arg)
 		elif term.__class__ == Divergence:
 			return getOrder(term.arg) - 1
@@ -427,9 +487,14 @@ def getOrder(term):
 					order = 0
 				elif order == 2 and argOrder == 1:
 					order = 1
-				# else:
-				# 	order = order
 			return order
+
+		elif term.__class__ == Division:
+			argsOrders = [ getOrder(arg) for arg in term.args ]
+			if argsOrders[0] != argsOrders[1]:
+				raise Exception(f"Invalid term {term}")
+
+			return argsOrders[0]
 
 		elif term.__class__ == DotProduct:
 			return sum([ getOrder(arg) for arg in term.args ]) - 2
@@ -438,9 +503,10 @@ def getOrder(term):
 			# May need revision
 			return getOrder(term.args[0])
 
-	# print("-----------------")
-	# print(term)
-	# exit()
+	if term.__class__ == Variable:
+		raise Exception(f"Variable {term} was not declared as a property")
+	else:
+		raise Exception(f"Could not find order of the term {term}")
 
 def isTransient(term):
 	if hasSubclass(term, TimeDerivative):
@@ -451,13 +517,4 @@ def isTransient(term):
 			if isTransient(arg):
 				return True
 
-	return False
-
-def hasTermWithSubclass(term, subclass):
-	if hasSubclass(term, subclass):
-		return True
-	elif hasSubclass(term, Operator):
-		for arg in term.args:
-			if hasTermWithSubclass(arg, subclass):
-				return True
 	return False

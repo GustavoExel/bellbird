@@ -1,26 +1,34 @@
 import bellbird
 
-# Stress Equilibrium
+# Geomechanics
 model = bellbird.Model(
-	name = "Stress Equilibrium and Heat Transfer",
+	name = "Geomechanics",
 	equationsStr = [
-		"div(Ce * grad_s(vec(u))) + rho * g = vec(0)",
-		"rho * cp * d/dt(temperature) = const(k) * div( grad(temperature) ) + q",
+		"div( Ce*grad_s(vec(u)) ) - grad(alpha*p) + rho * g = vec(0)",
+		"S * d/dt(p) + alpha*d/dt(div(u)) + div( (k*mu) * ( rho*g - grad(p) ) ) = 0",
 	],
-	variables   = ["u_x", "u_y", "u_z", "temperature"],
+	variables   = ["u_x", "u_y", "u_z", "p"],
 	definitions = [
-		"g = np.array([0.0, -9.81, 0.0])[:dimension]",
+		"g = np.array([0.0, 0.0, 0.0])[:dimension]",
 		"lame = 2*G*nu/(1-2*nu)",
 		"Ce = np.array([[2*G+lame, lame, 0], [lame, 2*G+lame, 0], [0, 0, G]]) if dimension==2 else np.array([[2*G+lame, lame, lame, 0, 0, 0], [lame, 2*G+lame, lame, 0, 0, 0], [lame, lame, 2*G+lame, 0, 0, 0], [0, 0, 0, G, 0, 0], [0, 0, 0, 0, G, 0], [0, 0, 0, 0, 0, G]])",
+
+		"rho = phi * rhof + (1-phi) * rhos",
+		"K = 2*G*(1 + nu) / 3*(1-2*nu)",
+		"cb = 1 / K",
+		"alpha = 1 - cs / cb",
+		"S = (phi * cf + (alpha-phi) * cs)",
 	],
 	properties = {
-    	"rho": 1800.0,
-        "nu": 0.4,
-        "G": 6.0e+06,
-		"k" : 1.0,
-		"q" : 0.0,
-		"rho" : 1.0,
-		"cp" : 1.0,
+		"nu": 2.0e-1,
+		"G": 6.0e+9,
+		"cs": 0.0,
+		"phi": 1.9e-1,
+		"k": 1.9e-15,
+		"cf": 3.0303e-10,
+		"mu": 1/1.0e-03,
+		"rhos": 2.7e+3,
+		"rhof": 1.0e+3,
 	},
 	boundaryConditions = [
 		bellbird.InitialCondition("u_x", 0.0),
@@ -28,63 +36,61 @@ model = bellbird.Model(
 		bellbird.BoundaryCondition("u_x", bellbird.Dirichlet, "East", 0.0),
 		bellbird.BoundaryCondition("u_x", bellbird.Neumann, "South", 0.0),
 		bellbird.BoundaryCondition("u_x", bellbird.Neumann, "North", 0.0),
-		# bellbird.BoundaryCondition("u_x", bellbird.Neumann, "Top", 0.0),				# 3D
-		# bellbird.BoundaryCondition("u_x", bellbird.Neumann, "Bottom", 0.0),			# 3D
 		bellbird.InitialCondition("u_y", 0.0),
 		bellbird.BoundaryCondition("u_y", bellbird.Neumann, "West", 0.0),
 		bellbird.BoundaryCondition("u_y", bellbird.Neumann, "East", 0.0),
 		bellbird.BoundaryCondition("u_y", bellbird.Dirichlet, "South", 0.0),
-		bellbird.BoundaryCondition("u_y", bellbird.Neumann, "North", 1e4),
-		# bellbird.BoundaryCondition("u_y", bellbird.Neumann, "Top", 0.0),				# 3D
-		# bellbird.BoundaryCondition("u_y", bellbird.Neumann, "Bottom", 0.0),			# 3D
-		# bellbird.InitialCondition("u_z", 0.0),										# 3D
-		# bellbird.BoundaryCondition("u_z", bellbird.Neumann, "West", 0.0),				# 3D
-		# bellbird.BoundaryCondition("u_z", bellbird.Neumann, "East", 0.0),				# 3D
-		# bellbird.BoundaryCondition("u_z", bellbird.Neumann, "South", 0.0),			# 3D
-		# bellbird.BoundaryCondition("u_z", bellbird.Neumann, "North", 0.0),			# 3D
-		# bellbird.BoundaryCondition("u_z", bellbird.Dirichlet, "Top", 0.0),			# 3D
-		# bellbird.BoundaryCondition("u_z", bellbird.Dirichlet, "Bottom", 0.0),			# 3D
-		bellbird.InitialCondition("temperature", 0.0),
-		bellbird.BoundaryCondition("temperature", bellbird.Neumann, "West", 100.0),
-		bellbird.BoundaryCondition("temperature", bellbird.Dirichlet, "East", 100.0),
-		bellbird.BoundaryCondition("temperature", bellbird.Neumann, "South", 0.0),
-		bellbird.BoundaryCondition("temperature", bellbird.Neumann, "North", 0.0),
-		# bellbird.BoundaryCondition("temperature", bellbird.Neumann, "Top", 0.0),		# 3D
-		# bellbird.BoundaryCondition("temperature", bellbird.Neumann, "Bottom", 0.0),	# 3D
+		bellbird.BoundaryCondition("u_y", bellbird.Neumann, "North", 1e5),
+		bellbird.InitialCondition("p", 0.0),
+		bellbird.BoundaryCondition("p", bellbird.Neumann, "West", 0.0),
+		bellbird.BoundaryCondition("p", bellbird.Neumann, "East", 0.0),
+		bellbird.BoundaryCondition("p", bellbird.Neumann, "South", 0.0),
+		bellbird.BoundaryCondition("p", bellbird.Neumann, "North", 0.0),
 	],
-	meshPath = "../PyEFVLib/meshes/msh/2D/Square.msh",									# 2D
-	# meshPath = "../PyEFVLib/meshes/msh/3D/Hexas.msh",									# 3D
+	sparse = False,
+	meshPath = "../PyEFVLib/meshes/msh/2D/10x10.msh",
+	maxNumberOfIterations = 70,
+	timeStep = 10,
 )
 
 model.compile()
 model.run()
 
 """
-Plano:
-	- Implementar o HeatTransfer com bastantes assumptions e sem muita preocupação com a
-		idependência do programa, como calcular as condições de contorno, ...
-		+ Não se preocupar com termos diferentes (como função de forma..., campos na integral de superfície)
-		+ Não se preocupar com termos especiais como matriz constitutiva
-		+ Não se preocupar com o arranjo da matriz, ou com a dimensão dos termos (como grad, div, matrizes)
-
-	- Implementar o Stress Equilibrium
-		+ Começar a se preocupar com calcular as condições de contorno
-		+ Se preocupar um pouco mais com o arranjo da matriz (mas não taanto)
-		+ Se preocupar com as dimensões dos termos (vetores, grads, divs, e matrizes)
-		+ Se preocupar com campos na iint (que precisa de funções de forma)
-		+ Não se preocupar com várias equações
-		+ Não se preocupar com arranjo na matriz
-
-	- Implementar a geomecânica
-		+ Se preocupar com mais de uma equação
-
-"""
-
-"""
 --> PENDÊNCIAS
-	--> Sparse
-	--> Implementar funções do clusterTerms como:
-		--> (1+1) = 2
-		--> A+A+B = 2*A+B
-		--> n*A+k*A+B = (n+k)*A + B
+	--> Os seguintes termos ainda não foram implementados:
+		> (✓) iint(alpha * (1/Δt) * u)
+		> (✓) iint(alpha * p * I)
+		> (✓) iint((-1) * k * mu * rho * g)
+		> (✓) iint(alpha * (1/Δt) * u_old)
+
+	--> Provavelmente vamos ter que mudar várias coisas
+		Estou usando u_x, u_y e u_z como variáveis, mas u_old aparece nas equações, e tem vários momentos
+		que eu só ignoro o final ( var.name.split("_")[0] + '_x' pode ignorar o '_old')
+
+	--> Tá demorando muuito, precisamos revisar os esquemas com as flags
+
+	--> Avisar se o programa não der conta de implementar algum termo
+
+	--> Adicionar um help
+		- Avisar para usar o np.array por causa do (-1) * 
+
+	--> Precisamos melhorar o __str__ por causa que é o que vai para o script
+		- a * (b + c) pode virar a * b + c
+		- a * (b / c) * d pode virar a * b / c * d
+
+	--> Fica mais organizado se fizermos uma classe separada do tipo writer
+	--> Espelhar tudo o que foi implementado na matrix pro independente
+	--> Revisar a rigorosidade dos filtros no writer, ELES TÃO UM LIXO
+	--> Padronizar a indexação
+		--> coeff antes ou depois do number of vertices?
+		--> Padronizar quando esconde ou não o zero
+		--> Quem sabe colocar comentários para explicar a indexação
+	--> Urgentíssimo verificar as condições de contorno e ver o esquema da outer face
+
+	--> Revisar o writeIndependentVolumeIntegral
+
+	--> No stress equilibrium a gente não arrumou o u_xField, e talvez n precisaria, mas é bom
+
+	--> Ver dimension==3 no saver sem a pressão
 """

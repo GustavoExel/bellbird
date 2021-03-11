@@ -11,6 +11,9 @@ class Operator:
 
 class Function(Operator):
 	def __repr__(self):
+		return f"{self.func}({repr(self.args[0])})"
+
+	def __str__(self):
 		return f"{self.func}({self.args[0]})"
 
 	@property
@@ -20,8 +23,11 @@ class Function(Operator):
 
 class BinaryOperator(Operator):
 	def __repr__(self):
+		return f" {self.symbol} ".join(map(repr, self.args))
+		# return f"{self.func}({', '.join(map(repr, self.args))})"
+
+	def __str__(self):
 		return f" {self.symbol} ".join(map(str, self.args))
-		# return f"{self.func}({', '.join(map(str, self.args))})"
 
 
 # --------- Functions --------- 
@@ -54,11 +60,11 @@ class SurfaceIntegral(Function):
 	func = "iint"
 	linear = True
 
-class VolumetricSummatory(Function):
+class VolumetricSummation(Function):
 	func = "summ3D"
 	linear = True
 
-class SurfaceSummatory(Function):
+class SurfaceSummation(Function):
 	func = "summ2D"
 	linear = True
 
@@ -109,8 +115,8 @@ functions = {
 	"intT"	 : TimeIntegral,
 	"iiint"	 : VolumetricIntegral,
 	"iint"	 : SurfaceIntegral,
-	"summ3D" : VolumetricSummatory,
-	"summ2D" : SurfaceSummatory,
+	"summ3D" : VolumetricSummation,
+	"summ2D" : SurfaceSummation,
 }
 
 binaryOperators = {
