@@ -332,14 +332,18 @@ class Model:
 
 									write(t=t+0, ln="# " + str(term.arg))
 									write(t=t+0, ln="for element in grid.elements:")
-									write(t=t+1, ln="for innerFace in element.innerFaces:")
-									write(t=t+2, ln="area = innerFace.area.getCoordinates()[:dimension]")
-									write(t=t+2, ln="shapeFunctions = innerFace.getShapeFunctions()", nl=2)
-									write(t=t+2, ln="backwardsHandle, forwardHandle = innerFace.getNeighborVerticesHandles()")
+									write(t=t+1, ln="for face in element.faces:")
+									write(t=t+2, ln="area = face.area.getCoordinates()[:dimension]")
+									write(t=t+2, ln="shapeFunctions = face.getShapeFunctions()", nl=2)
 									write(t=t+2, ln="for coord in range(dimension):")
 									write(t=t+3, ln="for local, vertex in enumerate(element.vertices):")
-									add(t=t+4, i=f"backwardsHandle{idxStr1}", j=f"vertex.handle + numberOfVertices*(coord+{idxStr2})", val=f"{coeffStr} * shapeFunctions[local] * area[coord]")
-									add(t=t+4, i=f"forwardHandle{idxStr1}", j=f"vertex.handle + numberOfVertices*(coord+{idxStr2})", val=f"-{coeffStr} * shapeFunctions[local] * area[coord]", nl=2)
+									write(t=t+4, ln="if type(face) == PyEFVLib.InnerFace:")
+									write(t=t+5, ln="backwardsHandle, forwardHandle = face.getNeighborVerticesHandles()", nl=2)
+									add(t=t+5, i=f"backwardsHandle{idxStr1}", j=f"vertex.handle + numberOfVertices*(coord+{idxStr2})", val=f"{coeffStr} * shapeFunctions[local] * area[coord]")
+									add(t=t+5, i=f"forwardHandle{idxStr1}", j=f"vertex.handle + numberOfVertices*(coord+{idxStr2})", val=f"-{coeffStr} * shapeFunctions[local] * area[coord]", nl=2)
+									write(t=t+4, ln="elif type(face) == PyEFVLib.OuterFace:")
+									add(t=t+5, i=f"face.vertex.handle{idxStr1}", j=f"vertex.handle + numberOfVertices*(coord+{idxStr2})", val=f"{coeffStr} * shapeFunctions[local] * area[coord]", nl=2)
+
 			writeMatrixVecFieldSurfaceIntegral(t+1)
 
 			def writeMatrixDirichletBoundaryConditions(t):
@@ -444,15 +448,17 @@ class Model:
 
 									write(t=t+0, ln=f"# {term.arg}")
 									write(t=t+0, ln="for element in grid.elements:")
-									write(t=t+1, ln="for innerFace in element.innerFaces:")
-									write(t=t+2, ln="area = innerFace.area.getCoordinates()[:dimension]")
-									write(t=t+2, ln="shapeFunctions = innerFace.getShapeFunctions()", nl=2)
-									write(t=t+2, ln="backwardsHandle, forwardHandle = innerFace.getNeighborVerticesHandles()")
+									write(t=t+1, ln="for face in element.faces:")
+									write(t=t+2, ln="area = face.area.getCoordinates()[:dimension]")
+									write(t=t+2, ln="shapeFunctions = face.getShapeFunctions()", nl=2)
 									write(t=t+2, ln="for coord in range(dimension):")
 									write(t=t+3, ln="for local, vertex in enumerate(element.vertices):")
-									write(t=t+4, ln=f"independent[backwardsHandle{idxStr1}] += {coeffStr} * shapeFunctions[local] * area[coord] * {fieldName}[vertex.handle + numberOfVertices*(coord{idxStr2})]")
-									write(t=t+4, ln=f"independent[forwardHandle{idxStr1}] -= {coeffStr} * shapeFunctions[local] * area[coord] * {fieldName}[vertex.handle + numberOfVertices*(coord{idxStr2})]", nl=2)
-
+									write(t=t+4, ln="if type(face) == PyEFVLib.InnerFace:")
+									write(t=t+5, ln="backwardsHandle, forwardHandle = face.getNeighborVerticesHandles()")
+									write(t=t+5, ln=f"independent[backwardsHandle{idxStr1}] += {coeffStr} * shapeFunctions[local] * area[coord] * {fieldName}[vertex.handle + numberOfVertices*(coord{idxStr2})]")
+									write(t=t+5, ln=f"independent[forwardHandle{idxStr1}] -= {coeffStr} * shapeFunctions[local] * area[coord] * {fieldName}[vertex.handle + numberOfVertices*(coord{idxStr2})]", nl=2)
+									write(t=t+4, ln="elif type(face) == PyEFVLib.OuterFace:")
+									write(t=t+5, ln=f"independent[face.vertex.handle{idxStr1}] += {coeffStr} * shapeFunctions[local] * area[coord] * {fieldName}[vertex.handle + numberOfVertices*(coord{idxStr2})]")
 
 			writeIndependentVecFieldSurfaceIntegral(t+1)
 

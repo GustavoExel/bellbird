@@ -2,6 +2,8 @@ import sys,os
 sys.path.append(os.path.join(os.path.dirname(__file__), os.pardir, 'PyEFVLib'))
 import PyEFVLib
 import numpy as np
+from scipy import sparse
+import scipy.sparse.linalg
 
 def geomechanics(problemData):
 	propertyData 	 = problemData.propertyData
@@ -18,7 +20,8 @@ def geomechanics(problemData):
 	pField    = np.repeat(0.0, numberOfVertices)
 	oldPField = problemData.initialValues['p'].copy()
 
-	matrix 		= np.zeros(((1+dimension)*numberOfVertices, (1+dimension)*numberOfVertices))
+	matrixCoords = []
+	matrixVals = []
 
 	nu         = propertyData.get(0, 'nu')
 	G          = propertyData.get(0, 'G')
@@ -39,6 +42,16 @@ def geomechanics(problemData):
 	alpha = 1 - cs / cb
 	S = (phi * cf + (alpha-phi) * cs)
 
+	def add(i, j, val):
+		matrixCoords.append((i, j))
+		matrixVals.append(val)
+
+	def set(i):
+		_matrixCoords = [coord for coord in matrixCoords if coord[0]!=i] + [(i,i)]
+		_matrixVals   = [val for coord,val in zip(matrixCoords,matrixVals) if coord[0]!=i] + [1.0]
+		matrixCoords.clear(); matrixCoords.extend(_matrixCoords)
+		matrixVals.clear(); matrixVals.extend(_matrixVals)
+
 	def getTransposedVoigtArea(innerFace):
 		Sx, Sy, Sz = innerFace.area.getCoordinates()
 		return np.array([[Sx,0,Sy],[0,Sy,Sx]]) if dimension==2 else np.array([[Sx,0,0,Sy,0,Sz],[0,Sy,0,Sx,Sz,0],[0,0,Sz,0,Sy,Sx]])
@@ -57,7 +70,7 @@ def geomechanics(problemData):
 	def assembleMatrix():
 		# S * (1/timeStep) * p
 		for vertex in grid.vertices:
-			matrix[vertex.handle+(dimension)*numberOfVertices][vertex.handle+(dimension)*numberOfVertices] += vertex.volume * S * (1/timeStep) 
+			add(vertex.handle+(dimension)*numberOfVertices, vertex.handle+(dimension)*numberOfVertices, vertex.volume * S * (1/timeStep) )
 
 		# (-1) * alpha * grad(p)
 		for element in grid.elements:
@@ -72,8 +85,8 @@ def geomechanics(problemData):
 				backwardsHandle, forwardHandle = innerFace.getNeighborVerticesHandles()
 				for coord in range(dimension):
 					for local, vertex in enumerate(element.vertices):
-						matrix[backwardsHandle+numberOfVertices*(coord)][vertex.handle+(dimension)*numberOfVertices] += matrixCoefficients[coord][local]
-						matrix[forwardHandle+numberOfVertices*(coord)][vertex.handle+(dimension)*numberOfVertices] += -matrixCoefficients[coord][local]
+						add(backwardsHandle+numberOfVertices*(coord), vertex.handle+(dimension)*numberOfVertices, matrixCoefficients[coord][local])
+						add(forwardHandle+numberOfVertices*(coord), vertex.handle+(dimension)*numberOfVertices, -matrixCoefficients[coord][local])
 
 		# (-1) * k * mu * grad(p)
 		for element in grid.elements:
@@ -82,8 +95,8 @@ def geomechanics(problemData):
 				matrixCoefficients = (-1) * k * mu * np.matmul( area.T, innerFace.globalDerivatives )
 				backwardVertexHandle, forwardVertexHandle = innerFace.getNeighborVerticesHandles()
 				for local, vertex in enumerate(element.vertices):
-					matrix[backwardVertexHandle+(dimension)*numberOfVertices][vertex.handle+(dimension)*numberOfVertices] += matrixCoefficients[local]
-					matrix[forwardVertexHandle+(dimension)*numberOfVertices][vertex.handle+(dimension)*numberOfVertices] += -matrixCoefficients[local]
+					add(backwardVertexHandle+(dimension)*numberOfVertices, vertex.handle+(dimension)*numberOfVertices, matrixCoefficients[local])
+					add(forwardVertexHandle+(dimension)*numberOfVertices, vertex.handle+(dimension)*numberOfVertices, -matrixCoefficients[local])
 
 		# Ce * grad_s(u)
 		for element in grid.elements:
@@ -97,56 +110,48 @@ def geomechanics(problemData):
 				for local, vertex in enumerate(element.vertices):
 					for i in range(dimension):
 						for j in range(dimension):
-							matrix[backwardsHandle + numberOfVertices*(i)][vertex.handle + numberOfVertices*(j)] +=  matrixCoefficients[i][j][local]
-							matrix[forwardHandle   + numberOfVertices*(i)][vertex.handle + numberOfVertices*(j)] += -matrixCoefficients[i][j][local]
+							add(backwardsHandle + numberOfVertices*(i), vertex.handle + numberOfVertices*(j),  matrixCoefficients[i][j][local])
+							add(forwardHandle   + numberOfVertices*(i), vertex.handle + numberOfVertices*(j), -matrixCoefficients[i][j][local])
 
 		# alpha * (1/timeStep) * u
 		for element in grid.elements:
-			for face in [*element.innerFaces, *element.outerFaces]:
+			for face in element.faces:
 				area = face.area.getCoordinates()[:dimension]
 				shapeFunctions = face.getShapeFunctions()
 
-				# backwardsHandle, forwardHandle = face.getNeighborVerticesHandles()
 				for coord in range(dimension):
 					for local, vertex in enumerate(element.vertices):
-						# matrix[backwardsHandle+numberOfVertices*(dimension)][vertex.handle + numberOfVertices*(coord+0)] += alpha * (1/timeStep) * shapeFunctions[local] * area[coord]
-						# matrix[forwardHandle+numberOfVertices*(dimension)][vertex.handle + numberOfVertices*(coord+0)] += -alpha * (1/timeStep) * shapeFunctions[local] * area[coord]
-
 						if type(face) == PyEFVLib.InnerFace:
 							backwardsHandle, forwardHandle = face.getNeighborVerticesHandles()
 
-							matrix[backwardsHandle+numberOfVertices*(dimension)][vertex.handle + numberOfVertices*(coord+0)] += alpha * (1/timeStep) * shapeFunctions[local] * area[coord]
-							matrix[forwardHandle+numberOfVertices*(dimension)][vertex.handle + numberOfVertices*(coord+0)] += -alpha * (1/timeStep) * shapeFunctions[local] * area[coord]
+							add(backwardsHandle+numberOfVertices*(dimension), vertex.handle + numberOfVertices*(coord+0), alpha * (1/timeStep) * shapeFunctions[local] * area[coord])
+							add(forwardHandle+numberOfVertices*(dimension), vertex.handle + numberOfVertices*(coord+0), -alpha * (1/timeStep) * shapeFunctions[local] * area[coord])
 
 						elif type(face) == PyEFVLib.OuterFace:
-							matrix[face.vertex.handle+numberOfVertices*(dimension)][vertex.handle + numberOfVertices*(coord+0)] += alpha * (1/timeStep) * shapeFunctions[local] * area[coord]
-
-
+							add(face.vertex.handle+numberOfVertices*(dimension), vertex.handle + numberOfVertices*(coord+0), alpha * (1/timeStep) * shapeFunctions[local] * area[coord])
 
 		# Dirichlet Boundary Conditions
 		for bCondition in problemData.dirichletBoundaries['u_x']:
 			for vertex in bCondition.boundary.vertices:
-				matrix[vertex.handle+(0)*numberOfVertices] = np.zeros((1+dimension)*numberOfVertices)
-				matrix[vertex.handle+(0)*numberOfVertices][vertex.handle+(0)*numberOfVertices] = 1.0
+				set(vertex.handle+(0)*numberOfVertices)
 
 		for bCondition in problemData.dirichletBoundaries['u_y']:
 			for vertex in bCondition.boundary.vertices:
-				matrix[vertex.handle+(1)*numberOfVertices] = np.zeros((1+dimension)*numberOfVertices)
-				matrix[vertex.handle+(1)*numberOfVertices][vertex.handle+(1)*numberOfVertices] = 1.0
+				set(vertex.handle+(1)*numberOfVertices)
 
 		if dimension == 3:
 			for bCondition in problemData.dirichletBoundaries['u_z']:
 				for vertex in bCondition.boundary.vertices:
-					matrix[vertex.handle+(2)*numberOfVertices] = np.zeros((1+dimension)*numberOfVertices)
-					matrix[vertex.handle+(2)*numberOfVertices][vertex.handle+(2)*numberOfVertices] = 1.0
+					set(vertex.handle+(2)*numberOfVertices)
 
 		for bCondition in problemData.dirichletBoundaries['p']:
 			for vertex in bCondition.boundary.vertices:
-				matrix[vertex.handle+(dimension)*numberOfVertices] = np.zeros((1+dimension)*numberOfVertices)
-				matrix[vertex.handle+(dimension)*numberOfVertices][vertex.handle+(dimension)*numberOfVertices] = 1.0
+				set(vertex.handle+(dimension)*numberOfVertices)
 
 		# Inverse Matrix
-		inverseMatrix = np.linalg.inv(matrix)
+		matrix = sparse.csc_matrix( (matrixVals, zip(*matrixCoords)), shape=((1+dimension)*numberOfVertices, (1+dimension)*numberOfVertices) )
+		inverseMatrix = sparse.linalg.inv( matrix )
+
 		return inverseMatrix
 
 	def assembleIndependent():
@@ -174,26 +179,19 @@ def geomechanics(problemData):
 
 		# alpha * (1/timeStep) * u_old
 		for element in grid.elements:
-			for face in [*element.innerFaces, *element.outerFaces]:
+			for face in element.faces:
 				area = face.area.getCoordinates()[:dimension]
 				shapeFunctions = face.getShapeFunctions()
 
-				# backwardsHandle, forwardHandle = face.getNeighborVerticesHandles()
 				for coord in range(dimension):
 					for local, vertex in enumerate(element.vertices):
 						if type(face) == PyEFVLib.InnerFace:
 							backwardsHandle, forwardHandle = face.getNeighborVerticesHandles()
-
 							independent[backwardsHandle+numberOfVertices*(dimension)] += alpha * (1/timeStep) * shapeFunctions[local] * area[coord] * oldUField[vertex.handle + numberOfVertices*(coord)]
 							independent[forwardHandle+numberOfVertices*(dimension)] -= alpha * (1/timeStep) * shapeFunctions[local] * area[coord] * oldUField[vertex.handle + numberOfVertices*(coord)]
 
 						elif type(face) == PyEFVLib.OuterFace:
 							independent[face.vertex.handle+numberOfVertices*(dimension)] += alpha * (1/timeStep) * shapeFunctions[local] * area[coord] * oldUField[vertex.handle + numberOfVertices*(coord)]
-
-
-
-
-
 		# Neumann Boundary Condition
 		for bCondition in problemData.neumannBoundaries['u_x']:
 			for facet in bCondition.boundary.facets:
@@ -247,7 +245,7 @@ def geomechanics(problemData):
 	while not converged:
 		independent = assembleIndependent()
 
-		results = np.matmul(inverseMatrix, independent)
+		results = inverseMatrix.dot(independent)
 		uField = results[(0)*numberOfVertices:(0+dimension)*numberOfVertices]
 		pField = results[(dimension)*numberOfVertices:(dimension+1)*numberOfVertices]
 
@@ -277,7 +275,7 @@ def main():
 	problemData = PyEFVLib.ProblemData(
 		meshFilePath = '../PyEFVLib/meshes/msh/2D/10x10.msh',
 		outputFilePath = 'results',
-		numericalSettings = PyEFVLib.NumericalSettings( timeStep = 10, tolerance = 0.0001, maxNumberOfIterations = 70 ),
+		numericalSettings = PyEFVLib.NumericalSettings( timeStep = 10, tolerance = 0.001, maxNumberOfIterations = 70 ),
 		propertyData = PyEFVLib.PropertyData({
 			'Body':
 			{

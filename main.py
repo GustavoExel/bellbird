@@ -47,10 +47,11 @@ model = bellbird.Model(
 		bellbird.BoundaryCondition("p", bellbird.Neumann, "South", 0.0),
 		bellbird.BoundaryCondition("p", bellbird.Neumann, "North", 0.0),
 	],
-	sparse = False,
+	sparse = True,
 	meshPath = "../PyEFVLib/meshes/msh/2D/10x10.msh",
 	maxNumberOfIterations = 70,
 	timeStep = 10,
+	tolerance = 1e-4,
 )
 
 model.compile()
@@ -58,16 +59,6 @@ model.run()
 
 """
 --> PENDÊNCIAS
-	--> Os seguintes termos ainda não foram implementados:
-		> (✓) iint(alpha * (1/Δt) * u)
-		> (✓) iint(alpha * p * I)
-		> (✓) iint((-1) * k * mu * rho * g)
-		> (✓) iint(alpha * (1/Δt) * u_old)
-
-	--> Provavelmente vamos ter que mudar várias coisas
-		Estou usando u_x, u_y e u_z como variáveis, mas u_old aparece nas equações, e tem vários momentos
-		que eu só ignoro o final ( var.name.split("_")[0] + '_x' pode ignorar o '_old')
-
 	--> Tá demorando muuito, precisamos revisar os esquemas com as flags
 
 	--> Avisar se o programa não der conta de implementar algum termo
@@ -93,4 +84,12 @@ model.run()
 	--> No stress equilibrium a gente não arrumou o u_xField, e talvez n precisaria, mas é bom
 
 	--> Ver dimension==3 no saver sem a pressão
+
+	--> Ver direitinho o que ainda não tá certo
+
+	--> Ver a geomecânica
+
+	--> Ver CERTINHO a boundary condition (tipo se tem outerFace ou não)
+
+	--> Se não der certo o esquema da Boundary Condition alertar o usuário que ele pode ter que revisar as boundary conditions
 """
