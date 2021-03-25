@@ -16,7 +16,6 @@ class Model:
 		self.timeStep			= timeStep
 		self.tolerance			= tolerance
 		self.maxNumberOfIterations = maxNumberOfIterations
-
 		self.writer = Writer(self)
 		self.compiled = False
 
@@ -24,13 +23,14 @@ class Model:
 		self.applyEbFVM()
 
 	def parseEquations(self):
+		self.propertyNames = list(self.properties.values())[0].keys()
 		definedNames = [ definition.split(" = ")[0] for definition in self.definitions ]
 		self.definedVars = [ Constant(termStr) if not "[" in definition.split(" = ")[1] else (Vector(termStr) if not "[[" in definition.split(" = ")[1].replace(" ", "") else Matrix(termStr)) for termStr, definition in zip(definedNames, self.definitions)]
 
 		self.equations = []
 		for equationStr in self.equationsStr:
 			equation = Equation(equationStr)
-			equation.updatePropertyVars(self.properties)
+			equation.updatePropertyVars(self.propertyNames)
 			equation.updateVariables(self.variables)
 			equation.updateDefinitions(self.definedVars)
 			self.equations.append(equation)
@@ -58,7 +58,7 @@ class Model:
 		for equationStr in self.equationsStr:
 			discretizedEquation = Equation(equationStr)
 
-			discretizedEquation.updatePropertyVars(self.properties)
+			discretizedEquation.updatePropertyVars(self.propertyNames)
 			discretizedEquation.updateVariables(self.variables)
 			discretizedEquation.updateDefinitions(self.definedVars)
 			discretizedEquation.integrateInSpace()				# a = b -> iiint(a) = iiint(b)

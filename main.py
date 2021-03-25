@@ -20,15 +20,17 @@ model = bellbird.Model(
 		"S = (phi * cf + (alpha-phi) * cs)",
 	],
 	properties = {
-		"nu": 2.0e-1,
-		"G": 6.0e+9,
-		"cs": 0.0,
-		"phi": 1.9e-1,
-		"k": 1.9e-15,
-		"cf": 3.0303e-10,
-		"mu": 1/1.0e-03,
-		"rhos": 2.7e+3,
-		"rhof": 1.0e+3,
+		"Body":{
+			"nu": 2.0e-1,
+			"G": 6.0e+9,
+			"cs": 0.0,
+			"phi": 1.9e-1,
+			"k": 1.9e-15,
+			"cf": 3.0303e-10,
+			"mu": 1/1.0e-03,
+			"rhos": 2.7e+3,
+			"rhof": 1.0e+3,
+		},
 	},
 	boundaryConditions = [
 		bellbird.InitialCondition("u_x", 0.0),
@@ -49,20 +51,17 @@ model = bellbird.Model(
 	],
 	sparse = False,
 	meshPath = "../PyEFVLib/meshes/msh/2D/10x10.msh",
-	maxNumberOfIterations = 70,
+	maxNumberOfIterations = 200,
 	timeStep = 10,
 	tolerance = 1e-4,
 )
 
 model.compile()
-model.run()
+# model.run()
 
 
 # Urgente
 """
-	--> Tá demorando muuito, precisamos revisar os esquemas com as flags
-	--> Adicionar um help
-		- Avisar para usar o np.array por causa do (-1) * 
 	--> Múltiplas regiões
 	--> Ver se o self.variables é compatível com as condições de contorno
 	--> Quem sabe eliminar a necessidade de escrever vec(0)
@@ -70,8 +69,11 @@ model.run()
 		- a * (b + c) pode virar a * b + c
 		- a * (b / c) * d pode virar a * b / c * d
 
-
 	--> Revisar o writeIndependentVolumeIntegral
+
+	--> Adicionar um help
+		- Avisar para usar o np.array por causa do (-1) * 
+	se n colocar nada tolerancia = 0
 """
 
 # Não Urgente

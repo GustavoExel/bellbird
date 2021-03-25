@@ -14,13 +14,15 @@ model = bellbird.Model(
 		"Ce = np.array([[2*G+lame, lame, 0], [lame, 2*G+lame, 0], [0, 0, G]]) if dimension==2 else np.array([[2*G+lame, lame, lame, 0, 0, 0], [lame, 2*G+lame, lame, 0, 0, 0], [lame, lame, 2*G+lame, 0, 0, 0], [0, 0, 0, G, 0, 0], [0, 0, 0, 0, G, 0], [0, 0, 0, 0, 0, G]])",
 	],
 	properties = {
-    	"rho": 1800.0,
-        "nu": 0.4,
-        "G": 6.0e+06,
-		"k" : 1.0,
-		"q" : 0.0,
-		"rho" : 1.0,
-		"cp" : 1.0,
+		"Body":{
+	    	"rho": 1800.0,
+	        "nu": 0.4,
+	        "G": 6.0e+06,
+			"k" : 1.0,
+			"q" : 0.0,
+			"rho" : 1.0,
+			"cp" : 1.0,
+		},
 	},
 	boundaryConditions = [
 		bellbird.InitialCondition("u_x", 0.0),

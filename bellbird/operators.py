@@ -11,7 +11,10 @@ class Operator:
 
 class Function(Operator):
 	def __repr__(self):
-		return f"{self.func}({repr(self.args[0])})"
+		if self.args:
+			return f"{self.func}({repr(self.args[0])})"
+		else:
+			return f"{self.func}()"
 
 	def __str__(self):
 		return f"{self.func}({self.args[0]})"
@@ -23,8 +26,8 @@ class Function(Operator):
 
 class BinaryOperator(Operator):
 	def __repr__(self):
-		return f" {self.symbol} ".join(map(repr, self.args))
-		# return f"{self.func}({', '.join(map(repr, self.args))})"
+		# return f" {self.symbol} ".join(map(repr, self.args))
+		return f"{self.func}({', '.join(map(repr, self.args))})"
 
 	def __str__(self):
 		return f" {self.symbol} ".join(map(str, self.args))
@@ -120,12 +123,12 @@ functions = {
 }
 
 binaryOperators = {
-	"*"		: Multiplication,
 	"/"		: Division,
+	"*"		: Multiplication,
 	"·"		: DotProduct,
 	"×"		: CrossProduct,
-	"+"		: Sum,
 	"-"		: Subtraction,
+	"+"		: Sum,
 	"="		: Equals,	
 }
 

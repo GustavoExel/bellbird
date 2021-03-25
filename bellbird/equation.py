@@ -57,8 +57,7 @@ class Equation:
 
 		return self
 
-	def updatePropertyVars(self, properties):
-		propertyVars = properties.keys()
+	def updatePropertyVars(self, propertyVars):
 		updatePropertyVars(self.term, propertyVars)
 
 	def updateVariables(self, variableNames):
@@ -277,7 +276,7 @@ def integrateInTime(term):
 		elif hasSubclass(arg, Operator):
 			integrateInTime(arg)
 
-def applyDistributiveProperty(term, flag=1):
+def applyDistributiveProperty(term, flag=0):
 	for idx, arg in enumerate(term.args):
 		if hasSubclass(arg, Multiplication):
 			for sArg in arg.args:
@@ -296,7 +295,7 @@ def applyDistributiveProperty(term, flag=1):
 	if flag > 0:
 		applyDistributiveProperty(term, flag-1)
 
-def clusterOperations(term, flag=6):
+def clusterOperations(term, flag=1):
 	for idx, arg in enumerate(term.args):
 		# Multiplication(A, Multiplication(B, C)) -> Multiplication(A, B, C)
 		if hasSubclass(arg, Multiplication):

@@ -23,8 +23,8 @@ class Writer:
 		self.writeProblemData(0)
 		self.writeFields(1)
 		self.declareMatrix(1)
-		self.declareProperties(1)
-		self.writeDefinitions(1)
+		# self.declareProperties(1)
+		# self.writeDefinitions(1)
 		self.writeUtilFuncs(1)
 
 		self.assembleMatrix(1)
@@ -38,7 +38,7 @@ class Writer:
 		self.writeMainFunction(0)
 
 
-		self.text = self.text.replace("Δt", "timeStep")
+		self.text = self.text.replace("Δt", "timeStep").replace("'","\"")
 		with open(self.fileName, "w") as f:
 			f.write(self.text)
 
@@ -71,38 +71,40 @@ class Writer:
 			vT = (2 if ax==3 else 1) if vecEq else 0
 
 			self.write(t=t+0, ln="# " + str(term.arg))
-			self.write(t=t+0, ln="for element in grid.elements:")
-			self.write(t=t+1, ln=f"for face in element.{'faces' if outerFace else 'innerFaces'}:")
-			self.write(t=t+2, ln="area = face.area.getCoordinates()[:dimension]")
+			self.write(t=t+0, ln=f"for face in element.{'faces' if outerFace else 'innerFaces'}:")
+			self.write(t=t+1, ln="area = face.area.getCoordinates()[:dimension]")
 
 			for _def in defs:
-				self.write(t=t+2, ln=_def)
+				self.write(t=t+1, ln=_def)
 
 			if not outerFace:
-				self.write(t=t+2, ln="backwardsHandle, forwardHandle = face.getNeighborVerticesHandles()")
+				self.write(t=t+1, ln="backwardsHandle, forwardHandle = face.getNeighborVerticesHandles()")
 			
 			if vecEq and ax==3:
-				self.write(t=t+2, ln="for i in range(dimension):")
-				self.write(t=t+3, ln="for j in range(dimension):")
+				self.write(t=t+1, ln="for i in range(dimension):")
+				self.write(t=t+2, ln="for j in range(dimension):")
 			elif vecEq:
-				self.write(t=t+2, ln="for coord in range(dimension):")
+				self.write(t=t+1, ln="for coord in range(dimension):")
 
 
-			self.write(t=t+2+vT, ln="for local, vertex in enumerate(element.vertices):")
+			self.write(t=t+1+vT, ln="for local, vertex in enumerate(element.vertices):")
 
 			if not outerFace:
+				add(t=t+2+vT, i=f"backwardsHandle+({idxStr1}{arrIdx1})*numberOfVertices", j=f"vertex.handle+({idxStr2}{arrIdx2})*numberOfVertices", val=f"{val}")
+				add(t=t+2+vT, i=f"forwardHandle+({idxStr1}{arrIdx1})*numberOfVertices", j=f"vertex.handle+({idxStr2}{arrIdx2})*numberOfVertices", val=f"-{val}", nl=2)
+			else:
+				self.write(t=t+2+vT, ln="if type(face) == PyEFVLib.InnerFace:")
+				self.write(t=t+3+vT, ln="backwardsHandle, forwardHandle = face.getNeighborVerticesHandles()", nl=2)
 				add(t=t+3+vT, i=f"backwardsHandle+({idxStr1}{arrIdx1})*numberOfVertices", j=f"vertex.handle+({idxStr2}{arrIdx2})*numberOfVertices", val=f"{val}")
 				add(t=t+3+vT, i=f"forwardHandle+({idxStr1}{arrIdx1})*numberOfVertices", j=f"vertex.handle+({idxStr2}{arrIdx2})*numberOfVertices", val=f"-{val}", nl=2)
-			else:
-				self.write(t=t+3+vT, ln="if type(face) == PyEFVLib.InnerFace:")
-				self.write(t=t+4+vT, ln="backwardsHandle, forwardHandle = face.getNeighborVerticesHandles()", nl=2)
-				add(t=t+4+vT, i=f"backwardsHandle+({idxStr1}{arrIdx1})*numberOfVertices", j=f"vertex.handle+({idxStr2}{arrIdx2})*numberOfVertices", val=f"{val}")
-				add(t=t+4+vT, i=f"forwardHandle+({idxStr1}{arrIdx1})*numberOfVertices", j=f"vertex.handle+({idxStr2}{arrIdx2})*numberOfVertices", val=f"-{val}", nl=2)
-				self.write(t=t+3+vT, ln="elif type(face) == PyEFVLib.OuterFace:")
-				add(t=t+4+vT, i=f"face.vertex.handle+({idxStr1}{arrIdx1})*numberOfVertices", j=f"vertex.handle+({idxStr2}{arrIdx2})*numberOfVertices", val=f"{val}", nl=2)
-
+				self.write(t=t+2+vT, ln="elif type(face) == PyEFVLib.OuterFace:")
+				add(t=t+3+vT, i=f"face.vertex.handle+({idxStr1}{arrIdx1})*numberOfVertices", j=f"vertex.handle+({idxStr2}{arrIdx2})*numberOfVertices", val=f"{val}", nl=2)
 
 		self.write(t=t, ln="def assembleMatrix():")
+		self.write(t=t+1, ln="for region in grid.regions:")
+		self.declareProperties(t=t+2, region=True)
+		self.writeDefinitions(t=t+2)
+		self.write(t=t+2, ln="for element in region.elements:")
 
 		def writeMatrixScalarFieldVolumeIntegral(t):
 			for eqIdx, discretizedEquation in enumerate(self.model.discretizedEquations):
@@ -113,7 +115,8 @@ class Writer:
 								self.notImplementedTerms.remove(term)
 
 								termStr = str(term.arg)
-								coeffStr = "vertex.volume * " + termStr.replace(f"* {field.name}", "")
+								# coeffStr = "vertex.volume * " + termStr.replace(f"* {field.name}", "")
+								coeffStr = "vertex.getSubElementVolume(element) * " + termStr.replace(f"* {field.name}", "")
 
 								arrIdx1 = self.model.arranjementDict["eq"][eqIdx]
 								idxStr1 = f"+({arrIdx1})*numberOfVertices" if arrIdx1!="0" else ""
@@ -122,10 +125,10 @@ class Writer:
 								idxStr2 = f"+({arrIdx2})*numberOfVertices" if arrIdx2!="0" else ""
 
 								self.write(t=t, ln="# " + termStr)
-								self.write(t=t, ln="for vertex in grid.vertices:")
+								self.write(t=t, ln="for vertex in element.vertices:")
 
 								add(t=t+1, i=f"vertex.handle{idxStr1}", j=f"vertex.handle{idxStr2}", val=coeffStr, nl=2)
-		writeMatrixScalarFieldVolumeIntegral(t+1)
+		writeMatrixScalarFieldVolumeIntegral(t+3)
 
 		def writeMatrixGradScalarVolumeIntegral(t):
 			for eqIdx, discretizedEquation in enumerate(self.model.discretizedEquations):
@@ -157,7 +160,7 @@ class Writer:
 								val = "matrixCoefficients[coord][local]",
 								vecEq = True, vecVar = False, ax = 0, outerFace = False,
 							)
-		writeMatrixGradScalarVolumeIntegral(t+1)
+		writeMatrixGradScalarVolumeIntegral(t+3)
 
 		def writeMatrixGradScalarSurfaceIntegral(t):
 			for eqIdx, discretizedEquation in enumerate(self.model.discretizedEquations):
@@ -183,7 +186,7 @@ class Writer:
 								val = "matrixCoefficients[local]",
 								vecEq = False, vecVar = False, ax = None, outerFace = False,
 							)
-		writeMatrixGradScalarSurfaceIntegral(t+1)
+		writeMatrixGradScalarSurfaceIntegral(t+3)
 
 		def writeMatrixSymmetricGradVecSurfaceIntegral(t):
 			for eqIdx, discretizedEquation in enumerate(self.model.discretizedEquations):
@@ -216,7 +219,7 @@ class Writer:
 								val = "matrixCoefficients[i][j][local]",
 								vecEq = True, vecVar = True, ax = 3, outerFace = False,
 							)
-		writeMatrixSymmetricGradVecSurfaceIntegral(t+1)
+		writeMatrixSymmetricGradVecSurfaceIntegral(t+3)
 
 		def writeMatrixVecFieldSurfaceIntegral(t):
 			for eqIdx, discretizedEquation in enumerate(self.model.discretizedEquations):
@@ -233,7 +236,7 @@ class Writer:
 									val = f"{coeffStr} * shapeFunctions[local] * area[coord]",
 									vecEq = True, vecVar = True, ax = 1, outerFace = True,
 								)
-		writeMatrixVecFieldSurfaceIntegral(t+1)
+		writeMatrixVecFieldSurfaceIntegral(t+3)
 
 		def writeMatrixDirichletBoundaryConditions(t):
 			self.write(t=t+0, ln="# Dirichlet Boundary Conditions")
@@ -262,6 +265,11 @@ class Writer:
 		self.write(t=t, ln="def assembleIndependent():")
 		self.write(t=t+1, ln=f"independent = np.zeros({self.model.matrixSize})", nl=2)
 
+		self.write(t=t+1, ln="for region in grid.regions:")
+		self.declareProperties(t=t+2, region=True)
+		self.writeDefinitions(t=t+2)
+		self.write(t=t+2, ln="for element in region.elements:")
+
 		def writeIndependentVolumeIntegral(t):
 			for eqIdx, (equation, discretizedEquation) in enumerate(zip(self.model.equations, self.model.discretizedEquations)):
 				for term in discretizedEquation.rhs:
@@ -269,7 +277,7 @@ class Writer:
 						self.notImplementedTerms.remove(term)
 
 						termStr = str(term.arg)
-						coeffStr = "vertex.volume * " + termStr
+						coeffStr = "vertex.getSubElementVolume(element) * " + termStr
 
 						for field in getTermFields(term):
 							if "_old" in field.name:
@@ -280,23 +288,23 @@ class Writer:
 
 						if equation.order == 0:
 							idxStr = f"+({self.model.arranjementDict['eq'][eqIdx]})*numberOfVertices" if len(self.model.variables) > 1 else ""
-							self.write(t=t, ln="# " + termStr)
-							self.write(t=t, ln="for vertex in grid.vertices:")
+							self.write(t=t+0, ln="# " + termStr)
+							self.write(t=t+0, ln="for vertex in element.vertices:")
 							self.write(t=t+1, ln=f"independent[vertex.handle{idxStr}] += " + coeffStr, nl=2)
 						elif equation.order == 1:
 							arrIdx = self.model.arranjementDict["eq"][eqIdx]
 							idxStr = "+" + (f"(coord+{arrIdx})" if arrIdx!="0" else "coord") + "*numberOfVertices"
 							for arg in (term.arg.args if hasSubclass(term.arg, Operator) else term.arg):
 								if hasSubclass(arg, Vector):
-									coeffStr = coeffStr.replace(str(arg), f"{arg}[coord]")
-							self.write(t=t, ln="# " + termStr)
-							self.write(t=t, ln="for vertex in grid.vertices:")
+									coeffStr = coeffStr.replace(f" {arg}", f" {arg}[coord]")
+							self.write(t=t+0, ln="# " + termStr)
+							self.write(t=t+0, ln="for vertex in element.vertices:")
 							self.write(t=t+1, ln="for coord in range(dimension):")							
 							self.write(t=t+2, ln=f"independent[vertex.handle{idxStr}] += " + coeffStr, nl=2)
 
 					elif term.__class__ == VolumetricIntegral:
 						raise Exception(f"Warning: Term {term} is being ignored")
-		writeIndependentVolumeIntegral(t+1)
+		writeIndependentVolumeIntegral(t+3)
 
 		def writeIndependentVecConstSurfaceIntegral(t):
 			for eqIdx, discretizedEquation in enumerate(self.model.discretizedEquations):
@@ -310,15 +318,14 @@ class Writer:
 						idxStr = f"+({arrIdx})*numberOfVertices" if arrIdx != "0" else ""
 
 						self.write(t=t+0, ln=f"# {coeffStr}")
-						self.write(t=t+0, ln="for element in grid.elements:")
-						self.write(t=t+1, ln="for innerFace in element.innerFaces:")
-						self.write(t=t+2, ln="area = innerFace.area.getCoordinates()[:dimension]")
-						self.write(t=t+2, ln=f"coefficient = {coeffStr}")
-						self.write(t=t+2, ln="coefficient = np.matmul(area.T, coefficient)", nl=2)
-						self.write(t=t+2, ln="backwardsHandle, forwardHandle = innerFace.getNeighborVerticesHandles()")
-						self.write(t=t+2, ln=f"independent[backwardsHandle{idxStr}] += coefficient")
-						self.write(t=t+2, ln=f"independent[forwardHandle{idxStr}]   -= coefficient", nl=2)
-		writeIndependentVecConstSurfaceIntegral(t+1)
+						self.write(t=t+0, ln="for innerFace in element.innerFaces:")
+						self.write(t=t+1, ln="area = innerFace.area.getCoordinates()[:dimension]")
+						self.write(t=t+1, ln=f"coefficient = {coeffStr}")
+						self.write(t=t+1, ln="coefficient = np.matmul(area.T, coefficient)", nl=2)
+						self.write(t=t+1, ln="backwardsHandle, forwardHandle = innerFace.getNeighborVerticesHandles()")
+						self.write(t=t+1, ln=f"independent[backwardsHandle{idxStr}] += coefficient")
+						self.write(t=t+1, ln=f"independent[forwardHandle{idxStr}]   -= coefficient", nl=2)
+		writeIndependentVecConstSurfaceIntegral(t+3)
 
 		def writeIndependentVecFieldSurfaceIntegral(t):
 			for eqIdx, discretizedEquation in enumerate(self.model.discretizedEquations):
@@ -340,19 +347,18 @@ class Writer:
 								idxStr2 = f"+{arrIdx2}" if arrIdx2 != "0" else ""
 
 								self.write(t=t+0, ln=f"# {term.arg}")
-								self.write(t=t+0, ln="for element in grid.elements:")
-								self.write(t=t+1, ln="for face in element.faces:")
-								self.write(t=t+2, ln="area = face.area.getCoordinates()[:dimension]")
-								self.write(t=t+2, ln="shapeFunctions = face.getShapeFunctions()", nl=2)
-								self.write(t=t+2, ln="for coord in range(dimension):")
-								self.write(t=t+3, ln="for local, vertex in enumerate(element.vertices):")
-								self.write(t=t+4, ln="if type(face) == PyEFVLib.InnerFace:")
-								self.write(t=t+5, ln="backwardsHandle, forwardHandle = face.getNeighborVerticesHandles()")
-								self.write(t=t+5, ln=f"independent[backwardsHandle{idxStr1}] += {coeffStr} * shapeFunctions[local] * area[coord] * {fieldName}[vertex.handle + (coord{idxStr2})*numberOfVertices]")
-								self.write(t=t+5, ln=f"independent[forwardHandle{idxStr1}] -= {coeffStr} * shapeFunctions[local] * area[coord] * {fieldName}[vertex.handle + (coord{idxStr2})*numberOfVertices]", nl=2)
-								self.write(t=t+4, ln="elif type(face) == PyEFVLib.OuterFace:")
-								self.write(t=t+5, ln=f"independent[face.vertex.handle{idxStr1}] += {coeffStr} * shapeFunctions[local] * area[coord] * {fieldName}[vertex.handle + (coord{idxStr2})*numberOfVertices]", nl=2)
-		writeIndependentVecFieldSurfaceIntegral(t+1)
+								self.write(t=t+0, ln="for face in element.faces:")
+								self.write(t=t+1, ln="area = face.area.getCoordinates()[:dimension]")
+								self.write(t=t+1, ln="shapeFunctions = face.getShapeFunctions()", nl=2)
+								self.write(t=t+1, ln="for coord in range(dimension):")
+								self.write(t=t+2, ln="for local, vertex in enumerate(element.vertices):")
+								self.write(t=t+3, ln="if type(face) == PyEFVLib.InnerFace:")
+								self.write(t=t+4, ln="backwardsHandle, forwardHandle = face.getNeighborVerticesHandles()")
+								self.write(t=t+4, ln=f"independent[backwardsHandle{idxStr1}] += {coeffStr} * shapeFunctions[local] * area[coord] * {fieldName}[vertex.handle + (coord{idxStr2})*numberOfVertices]")
+								self.write(t=t+4, ln=f"independent[forwardHandle{idxStr1}] -= {coeffStr} * shapeFunctions[local] * area[coord] * {fieldName}[vertex.handle + (coord{idxStr2})*numberOfVertices]", nl=2)
+								self.write(t=t+3, ln="elif type(face) == PyEFVLib.OuterFace:")
+								self.write(t=t+4, ln=f"independent[face.vertex.handle{idxStr1}] += {coeffStr} * shapeFunctions[local] * area[coord] * {fieldName}[vertex.handle + (coord{idxStr2})*numberOfVertices]", nl=2)
+		writeIndependentVecFieldSurfaceIntegral(t+3)
 
 		def writeNeumannBoundaryConditions(t):
 			# This signal implies fluxes inwards
@@ -475,25 +481,25 @@ class Writer:
 		self.write(t=t, ln="saver.finalize()", nl=2)
 
 	def writeMainFunction(self, t):
-		def getRegionNames():
-			try:
-				import sys,os
-				sys.path.append(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, 'PyEFVLib'))
-				import PyEFVLib
-				return PyEFVLib.read(self.model.meshPath).gridData.regionsNames
-			except:
-				return ["Body"]
-		regionNames = getRegionNames()
+		# def getRegionNames():
+		# 	try:
+		# 		import sys,os
+		# 		sys.path.append(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, 'PyEFVLib'))
+		# 		import PyEFVLib
+		# 		return PyEFVLib.read(self.model.meshPath).gridData.regionsNames
+		# 	except:
+		# 		return ["Body"]
+		# regionNames = getRegionNames()
 		self.write(t=t+0, ln="def main():")
 		self.write(t=t+1, ln="problemData = PyEFVLib.ProblemData(")
 		self.write(t=t+2, ln=f"meshFilePath = '{self.model.meshPath}',")
 		self.write(t=t+2, ln="outputFilePath = 'results',")
 		self.write(t=t+2, ln=f"numericalSettings = PyEFVLib.NumericalSettings( timeStep = {self.model.timeStep}, tolerance = {self.model.tolerance}, maxNumberOfIterations = {self.model.maxNumberOfIterations} ),")
 		self.write(t=t+2, ln="propertyData = PyEFVLib.PropertyData({")
-		for regionName in regionNames:
+		for regionName in self.model.properties:
 			self.write(t=t+3, ln=f"'{regionName}':")
 			self.write(t=t+3, ln="{")
-			for propertyName, propertyValue in self.model.properties.items():
+			for propertyName, propertyValue in self.model.properties[regionName].items():
 				self.write(t=t+4, ln=f"'{propertyName}': {propertyValue},")
 			self.write(t=t+3, ln="},")
 		self.write(t=t+2, ln="}),")
@@ -551,9 +557,9 @@ class Writer:
 			self.write(t=t, ln=f"matrix 		= np.zeros(({self.model.matrixSize}, {self.model.matrixSize}))", nl=2)
 		# self.write(t=t, ln=f"independent = np.zeros({self.model.matrixSize})", nl=2)
 
-	def declareProperties(self, t):
-		for propertyName in self.model.properties:
-			self.write(t=t, ln=f"{propertyName:<10} = propertyData.get(0, '{propertyName}')")
+	def declareProperties(self, t, region=False):
+		for propertyName in self.model.propertyNames:
+			self.write(t=t, ln=f"{propertyName:<10} = propertyData.get({'region.handle' if region else '0'}, '{propertyName}')")
 		self.write("")
 
 	def writeDefinitions(self, t):
