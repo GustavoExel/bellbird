@@ -1,10 +1,12 @@
+import sys,os
+sys.path.append(os.path.join(os.path.dirname(__file__), os.pardir))
 import bellbird
 
 # Stress Equilibrium
 model = bellbird.Model(
 	name = "Stress Equilibrium",
 	equationsStr = [
-		"div(Ce * grad_s(vec(u))) + rho * g = vec(0)",
+		"div(Ce * grad_s(u)) + rho * g = vec(0)",
 	],
 	variables   = ["u_x", "u_y", "u_z"],
 	definitions = [
@@ -43,7 +45,7 @@ model = bellbird.Model(
 		bellbird.BoundaryCondition("u_z", bellbird.Dirichlet, "Bottom", 0.0),			# 3D
 	],
 	# meshPath = "../PyEFVLib/meshes/msh/2D/Square.msh",								# 2D
-	meshPath = "../PyEFVLib/meshes/msh/3D/Hexas.msh",									# 3D
+	meshPath = "../../PyEFVLib/meshes/msh/3D/Hexas.msh",									# 3D
 	sparse = False,
 )
 

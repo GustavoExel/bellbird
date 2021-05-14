@@ -1,10 +1,12 @@
+import sys,os
+sys.path.append(os.path.join(os.path.dirname(__file__), os.pardir))
 import bellbird
 
 # Geomechanics
 model = bellbird.Model(
 	name = "Geomechanics",
 	equationsStr = [
-		"div( Ce*grad_s(vec(u)) ) - grad(alpha*p) + rho * g = vec(0)",
+		"div( Ce*grad_s(u) ) - grad(alpha*p) + rho * g = vec(0)",
 		"S * d/dt(p) + alpha*d/dt(div(u)) + div( (k*mu) * ( rho*g - grad(p) ) ) = 0",
 	],
 	variables   = ["u_x", "u_y", "u_z", "p"],
@@ -50,46 +52,11 @@ model = bellbird.Model(
 		bellbird.BoundaryCondition("p", bellbird.Neumann, "North", 0.0),
 	],
 	sparse = False,
-	meshPath = "../PyEFVLib/meshes/msh/2D/10x10.msh",
-	maxNumberOfIterations = 200,
+	meshPath = "../../PyEFVLib/meshes/msh/2D/10x10.msh",
+	maxNumberOfIterations = 70,
 	timeStep = 10,
 	tolerance = 1e-4,
 )
 
 model.compile()
-# model.run()
-
-
-# Urgente
-"""
-	--> Múltiplas regiões
-	--> Ver se o self.variables é compatível com as condições de contorno
-	--> Quem sabe eliminar a necessidade de escrever vec(0)
-	--> Precisamos melhorar o __str__ por causa que é o que vai para o script
-		- a * (b + c) pode virar a * b + c
-		- a * (b / c) * d pode virar a * b / c * d
-
-	--> Revisar o writeIndependentVolumeIntegral
-
-	--> Adicionar um help
-		- Avisar para usar o np.array por causa do (-1) * 
-	se n colocar nada tolerancia = 0
-"""
-
-# Não Urgente
-"""
-	--> Tinhamos pensado em espelhar todas as integrais da matriz pro independente, mas não é uma boa fazer isso sem olhar com cuidado para cada uma
-		> Mesmo assim é bom pensar que se quisermos aplicar uma derivada temporal em tudo teremos que passar tudo da matrix pro independente
-	--> Quem sabe colocar comentários para explicar a indexação
-	--> No stress equilibrium a gente não arrumou o u_xField, e talvez n precisaria, mas é bom
-
-"""
-
-
-# Dúvida
-"""
-	--> Verificar as condições de contorno (se vai outerFace ou não, cond de Neumann, fluxo...)
-	--> Se não der certo o esquema da Boundary Condition alertar o usuário que ele pode ter que revisar as boundary conditions
-
-
-"""
+model.run()

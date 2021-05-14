@@ -5,6 +5,11 @@ from bellbird.writer import Writer
 
 class Model:
 	def __init__(self, name, equationsStr, variables, properties, boundaryConditions, definitions=[], meshPath="", sparse=False, timeStep=0.1, tolerance=1e-4, maxNumberOfIterations=300):
+		"""
+			- Declara as variáveis de entrada necessárias para a resolução do problema
+			- Interpreta as equações fornecidas em self.parseEquations()
+			- Discretiza as equações fornecidas em self.applyEbEFVM()
+		"""
 		self.name 				= name
 		self.equationsStr 		= equationsStr
 		self.variables 			= variables
@@ -23,6 +28,33 @@ class Model:
 		self.applyEbFVM()
 
 	def parseEquations(self):
+		"""
+			-> Armazena propriedades, definições e equações
+				- Armazena os nomes das propriedades passadas em self.properties
+				- Armazena os nomes de variáveis definidas
+				- Gera os objetos das variáveis definidas, e classifica em Constante, Vetor e Matriz
+				- Inicialmente, gera os objetos das equações fornecidas
+					- Atualiza as variáveis que são propriedades para constantes
+						Obs.: Gostaríamos de passar propriedades variáveis no futuro, contudo equandto
+						não é implementado as propriedades são constantes, e podem passar para dentro e 
+						para fora de derivadas espaciais e temporais. Portanto deve-se reconsiderar
+						a promoção para Constant em updateVariables
+					- Atualiza as variáveis que são definições para as variáveis já criadas 
+					  e armazenadas em self.definedVars
+
+			-> Keeps track das dimensões para lidar com o arranjo e acoplamento das equações
+				- A função _rearrange tem como objetivo re-escrever expressões calculadas envolvendo "numberOfVertices" e "dimension"
+				  Ex.: _rearrange( ["dimension", 1] ) = "dimension + 1"
+				- Computa os 'radicais' das variáveis, no sentido de remover _x, _y, _z do nome das variáveis
+				- Computa as dimensões das variáveis na variável varDims. Se forem passadas variáveis com o sufixo _x sua dimensão será dimension.
+					Usamos dimension porque o programa final deve ser capaz de lidar com 2D e 3D.
+				- A variável self.arranjementDict["var"] armazena a posição que as variáveis ocupam no vetor de incógnitas
+					Ex.: [u_x, u_y, u_z, p] -> self.arranjementDict["var"] = {'u_x':0, 'u_y':1, 'u_z':2, 'p':dimension}
+					Ex.: [p, u_x, u_y, u_z] -> self.arranjementDict["var"] = {'p':0, 'u_x':1+0, 'u_y':1+1, 'u_z':1+2}
+		"""
+
+		# Armazena propriedades, definições e equações
+
 		self.propertyNames = list(self.properties.values())[0].keys()
 		definedNames = [ definition.split(" = ")[0] for definition in self.definitions ]
 		self.definedVars = [ Constant(termStr) if not "[" in definition.split(" = ")[1] else (Vector(termStr) if not "[[" in definition.split(" = ")[1].replace(" ", "") else Matrix(termStr)) for termStr, definition in zip(definedNames, self.definitions)]
@@ -34,6 +66,9 @@ class Model:
 			equation.updateVariables(self.variables)
 			equation.updateDefinitions(self.definedVars)
 			self.equations.append(equation)
+
+
+		# Keeps track das dimensões para lidar com o arranjo e acoplamento das equações
 
 		def _rearrange(terms):
 			return str(Equation(f"x={'+'.join(map(str,terms))}").rearrange().term.args[1])

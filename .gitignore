@@ -7,5 +7,11 @@
 # Other files
 *.ignore
 
+# Distribution files
+build/
+dist/
+*.egg-info
+
 # Folders
 __pycache__/
+results/

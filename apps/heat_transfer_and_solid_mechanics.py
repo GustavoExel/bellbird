@@ -1,3 +1,5 @@
+import sys,os
+sys.path.append(os.path.join(os.path.dirname(__file__), os.pardir))
 import bellbird
 
 # Stress Equilibrium + Heat Transfer
@@ -54,7 +56,7 @@ model = bellbird.Model(
 		# bellbird.BoundaryCondition("temperature", bellbird.Neumann, "Top", 0.0),		# 3D
 		# bellbird.BoundaryCondition("temperature", bellbird.Neumann, "Bottom", 0.0),	# 3D
 	],
-	meshPath = "../PyEFVLib/meshes/msh/2D/Square.msh",									# 2D
+	meshPath = "../../PyEFVLib/meshes/msh/2D/Square.msh",									# 2D
 	# meshPath = "../PyEFVLib/meshes/msh/3D/Hexas.msh",									# 3D
 	sparse = True,
 )
