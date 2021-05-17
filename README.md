@@ -2,15 +2,10 @@
 
 Library that parses differential equations (PDEs) strings and automates the creation of scripts for PyEFVLib using the element-based finite volume method. 
 
-## Dependencies & Installation
-
-- [Python 3](https://www.python.org/downloads/) (3.8.2);
-- [meshio](https://pypi.org/project/meshio/) (4.0.15);
-- [numpy](https://numpy.org/) (1.17.4);
-- [pandas](https://pandas.pydata.org/)(1.1.3);
-- [scipy](https://www.scipy.org/) (1.5.3);
-- [PyEFVLib](https://pypi.org/project/PyEFVLib/) (1.0.5);
-
+## Installation
+```bash
+pip install bellbird
+```
 
 ## Usage
 
