@@ -7,7 +7,7 @@ setup(
 	name="bellbird",
 	version="0.0.1",
 	description="Library that parses differential equations (PDEs) strings and automates the creation of scripts for PyEFVLib using the element-based finite volume method. ",
-	py_modules=["bellbird/__init__", "bellbird/variables", "bellbird/operators", "bellbird/equation", "bellbird/model"],
+	py_modules=["bellbird/__init__", "bellbird/variables", "bellbird/operators", "bellbird/equation", "bellbird/model", "bellbird/writer"],
 	classifiers=[
 		"Programming Language :: Python :: 3",
 		"Programming Language :: Python :: 3.6",
@@ -20,7 +20,7 @@ setup(
 	long_description_content_type="text/markdown",
 	install_requires=[
 		"numpy ~= 1.19.2",
-		"PyEFVLib ~= 1.0.1",
+		"PyEFVLib",
 	],
 	url="https://github.com/GustavoExel/bellbird",
 	author="Gustavo Exel",

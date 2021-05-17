@@ -6,9 +6,9 @@ from bellbird.writer import Writer
 class Model:
 	def __init__(self, name, equationsStr, variables, properties, boundaryConditions, definitions=[], meshPath="", sparse=False, timeStep=0.1, tolerance=1e-4, maxNumberOfIterations=300):
 		"""
-			- Declara as variáveis de entrada necessárias para a resolução do problema
-			- Interpreta as equações fornecidas em self.parseEquations()
-			- Discretiza as equações fornecidas em self.applyEbEFVM()
+			- Declares the input variables needed to solve the problem 
+			- Interprets the equations provided in self.parseEquations() 
+			- Discretizes the equations provided in self.applyEbEFVM()
 		"""
 		self.name 				= name
 		self.equationsStr 		= equationsStr

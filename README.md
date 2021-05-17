@@ -9,7 +9,7 @@ Library that parses differential equations (PDEs) strings and automates the crea
 - [numpy](https://numpy.org/) (1.17.4);
 - [pandas](https://pandas.pydata.org/)(1.1.3);
 - [scipy](https://www.scipy.org/) (1.5.3);
-- [PyEFVLib](https://pypi.org/project/PyEFVLib/) (1.0.1);
+- [PyEFVLib](https://pypi.org/project/PyEFVLib/) (1.0.5);
 
 
 ## Usage

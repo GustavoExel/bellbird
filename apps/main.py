@@ -97,5 +97,6 @@ model.run()
 	--> Implementar timeStep variável
 	--> Declarar matrix dentro da função de matrix
 	--> Usar gravidade como propriedade (isso é no uso)
+	--> Condição de Neumann errada (independent[outerFace.vertex.handle] += bCondition.getValue(outerFace.handle) ao invés de outerFace.vertex.handle)
 
 """
